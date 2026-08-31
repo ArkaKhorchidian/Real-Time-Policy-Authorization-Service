@@ -1,0 +1,22 @@
+Captured: 2026-08-31T01:04:26Z
+Host OS:  Darwin 25.5.0 arm64
+
+--- CPU ---
+Apple M5
+cores online: 10
+governor:     not applicable (macOS does not expose one)
+core pinning: unavailable (see below)
+
+--- Kernel / network ---
+kern.ipc.maxsockbuf: 8388608
+transport: UDP over loopback (server and generator on one host)
+
+--- Build ---
+policyd 1.0.0 (Release, AppleClang 21.0.0.21000101, Darwin/arm64)
+  batched syscalls (recvmmsg/sendmmsg): no
+  CPU affinity:                         no
+  io_uring backend:                     no
+
+--- Placement ---
+server workers start at core 0
+generator threads: 2 starting at core 5

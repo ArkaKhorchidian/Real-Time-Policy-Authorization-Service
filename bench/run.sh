@@ -54,6 +54,18 @@ SUSTAINABLE_QPS="${SUSTAINABLE_QPS:-100000}"
 # matters. So that comparison deliberately runs just past the knee.
 OMISSION_QPS="${OMISSION_QPS:-150000}"
 
+# Idle gap before each measured run. Back-to-back runs on a laptop-class
+# machine are not independent samples: sustained 100%-busy threads get hot, and
+# on Apple Silicon they also become candidates for demotion to efficiency
+# cores, so run N is systematically slower than run N-1. A few seconds of idle
+# between runs removes most of that; the repeatability section below is what
+# says whether it removed enough.
+COOLDOWN="${COOLDOWN:-6}"
+
+# How many times to repeat the headline configuration.
+REPEATS="${REPEATS:-5}"
+if [[ $QUICK -eq 1 ]]; then REPEATS=2; COOLDOWN=2; fi
+
 # Core placement. Workers take the low cores, the generator takes the high ones,
 # so the two never share a core -- sharing one produces a latency figure that is
 # mostly scheduler.
@@ -192,6 +204,7 @@ print(",".join(str(x) for x in [
 
 run_load() { # tag qps [extra args...]
   local tag="$1" qps="$2"; shift 2
+  sleep "$COOLDOWN"
   "$LOADGEN" --server "127.0.0.1:$PORT" --qps "$qps" --duration "$DURATION" \
              --warmup "$WARMUP" --threads "$GEN_THREADS" --first-core "$GEN_CORE0" \
              --rules "$RULES" --subscribers "$SUBSCRIBERS" \
@@ -308,14 +321,33 @@ if want backend; then
   done
 fi
 
+# ---------------------------------------------------------------------------
+# 8. Repeatability
+# ---------------------------------------------------------------------------
+if want repeat; then
+  section "Repeatability: ${REPEATS} runs of the headline configuration"
+  note "One run is not a result. This section is what says how much of the"
+  note "headline number is the server and how much is the machine it ran on."
+  start_server 1 32 50 udp
+  for i in $(seq 1 "$REPEATS"); do
+    note "repeat $i of $REPEATS"
+    run_load "repeat-${i}" "$SUSTAINABLE_QPS" 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
+  done
+fi
+
 cleanup
 SERVER_PID=""
 
 # ---------------------------------------------------------------------------
 # Plots
 # ---------------------------------------------------------------------------
-section "Plots"
+section "Plots and README"
 python3 bench/plot.py "$RESULTS"
+
+# Regenerate the README's results tables from the CSVs that were just written.
+# No number in the README is ever typed by hand: a README quoting a p99 somebody
+# transcribed six weeks ago is exactly the failure this project is about.
+python3 bench/update_readme.py README.md "$RESULTS"
 
 section "Done"
 note "summary rows : $RESULTS/summary.csv"

@@ -11,6 +11,7 @@
 #include <mach/thread_act.h>
 #include <mach/thread_policy.h>
 #include <pthread.h>
+#include <sys/qos.h>
 #endif
 
 namespace policy {
@@ -24,7 +25,9 @@ const char* affinity_support_description() {
 #if defined(__linux__)
   return "sched_setaffinity (hard pinning)";
 #elif defined(__APPLE__)
-  return "none — macOS affinity tags are advisory and ignored on Apple Silicon";
+  return "none — macOS has no sched_setaffinity; threads request "
+         "QOS_CLASS_USER_INTERACTIVE instead, which buys performance-core "
+         "eligibility but not placement";
 #else
   return "none — unsupported platform";
 #endif
@@ -44,14 +47,29 @@ PinResult pin_current_thread([[maybe_unused]] unsigned core, std::string& detail
   return PinResult::kPinned;
 
 #elif defined(__APPLE__)
-  // THREAD_AFFINITY_POLICY is a hint that groups threads sharing an L2; it is
-  // not a binding, and on Apple Silicon the call succeeds while changing
-  // nothing. Issue it anyway (it is harmless and helps on Intel Macs) but
-  // report the truth to the caller.
+  // macOS has no equivalent of sched_setaffinity. THREAD_AFFINITY_POLICY is a
+  // hint that groups threads sharing an L2; it is advisory on Intel and does
+  // nothing at all on Apple Silicon, where the scheduler owns P/E core
+  // placement.
+  //
+  // What macOS does offer, and what actually matters for a latency-sensitive
+  // thread here, is the QoS class: it is what decides whether a thread is
+  // eligible for a performance core or gets parked on an efficiency one. A
+  // busy-polling worker left at the default class can land on an E-core
+  // mid-run, and the resulting step change shows up as exactly the kind of
+  // tail this project is trying to characterize. USER_INTERACTIVE is the
+  // honest request for "this thread is latency-critical".
+  //
+  // It is still not pinning, and the return value says so, because a benchmark
+  // that reported "pinned" here would be lying about its own conditions.
   thread_affinity_policy_data_t policy = {static_cast<integer_t>(core) + 1};
   thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY,
                     reinterpret_cast<thread_policy_t>(&policy), THREAD_AFFINITY_POLICY_COUNT);
-  detail = "affinity tag " + std::to_string(core + 1) + " set, but macOS does not honour it";
+
+  const int qos_rc = pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+  detail = qos_rc == 0
+               ? "QoS set to USER_INTERACTIVE (performance cores); macOS has no true pinning"
+               : "macOS has no true pinning, and the QoS request failed";
   return PinResult::kUnsupported;
 
 #else

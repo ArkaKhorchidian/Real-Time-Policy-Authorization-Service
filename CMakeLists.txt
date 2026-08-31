@@ -154,8 +154,15 @@ add_library(policy_net STATIC
   src/control_plane.cpp)
 target_link_libraries(policy_net PUBLIC policy_core)
 if(POLICY_HAVE_IO_URING)
-  target_include_directories(policy_net PUBLIC ${LIBURING_INCLUDE_DIR})
+  # SYSTEM, so liburing's own C-style casts and macros do not trip this
+  # project's -Wold-style-cast/-Wconversion under -Werror. A third-party
+  # header's style is not something this build should have an opinion about.
+  target_include_directories(policy_net SYSTEM PUBLIC ${LIBURING_INCLUDE_DIR})
   target_link_libraries(policy_net PUBLIC ${LIBURING_LIBRARY})
+  # Belt and braces: warnings from a macro expansion are sometimes attributed
+  # to the expansion site rather than to the system header that defined it.
+  set_source_files_properties(src/server_iouring.cpp PROPERTIES
+    COMPILE_OPTIONS "-Wno-old-style-cast")
 endif()
 
 # ---------------------------------------------------------------------------

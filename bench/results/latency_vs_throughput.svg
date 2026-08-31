@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520" role="img" aria-label="Latency versus offered load">
+<style>
+  :root { --bg:#ffffff; --fg:#1a1a1a; --muted:#6b7280; --grid:#e5e7eb; --axis:#9ca3af; --target:#b91c1c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --grid:#21262d; --axis:#484f58; --target:#f85149; }
+  }
+
+  .bg { fill: var(--bg); }
+  .grid { stroke: var(--grid); stroke-width: 1; }
+  .axis { stroke: var(--axis); stroke-width: 1.5; }
+  .tick { fill: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .label { fill: var(--fg); font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .title { fill: var(--fg); font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .sub { fill: var(--muted); font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .legend { fill: var(--fg); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .series { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+  .target { stroke: var(--target); stroke-width: 1.4; stroke-dasharray: 5 4; fill: none; }
+  .targetlabel { fill: var(--target); font: 11px -apple-system, BlinkMacSystemFont, sans-serif; }
+</style>
+<rect class="bg" width="900" height="520"/>
+<text class="title" x="78" y="22">Latency versus offered load</text>
+<text class="sub" x="78" y="39">open-loop generator, latency measured from the scheduled send time; log-y. Lower is better.</text>
+<line class="grid" x1="78" y1="458.0" x2="710" y2="458.0"/>
+<text class="tick" x="70" y="462.0" text-anchor="end">10</text>
+<line class="grid" x1="78" y1="433.2" x2="710" y2="433.2"/>
+<text class="tick" x="70" y="437.2" text-anchor="end">20</text>
+<line class="grid" x1="78" y1="400.4" x2="710" y2="400.4"/>
+<text class="tick" x="70" y="404.4" text-anchor="end">50</text>
+<line class="grid" x1="78" y1="375.6" x2="710" y2="375.6"/>
+<text class="tick" x="70" y="379.6" text-anchor="end">100</text>
+<line class="grid" x1="78" y1="350.8" x2="710" y2="350.8"/>
+<text class="tick" x="70" y="354.8" text-anchor="end">200</text>
+<line class="grid" x1="78" y1="318.0" x2="710" y2="318.0"/>
+<text class="tick" x="70" y="322.0" text-anchor="end">500</text>
+<line class="grid" x1="78" y1="293.2" x2="710" y2="293.2"/>
+<text class="tick" x="70" y="297.2" text-anchor="end">1k</text>
+<line class="grid" x1="78" y1="268.4" x2="710" y2="268.4"/>
+<text class="tick" x="70" y="272.4" text-anchor="end">2k</text>
+<line class="grid" x1="78" y1="235.6" x2="710" y2="235.6"/>
+<text class="tick" x="70" y="239.6" text-anchor="end">5k</text>
+<line class="grid" x1="78" y1="210.8" x2="710" y2="210.8"/>
+<text class="tick" x="70" y="214.8" text-anchor="end">10k</text>
+<line class="grid" x1="78" y1="186.0" x2="710" y2="186.0"/>
+<text class="tick" x="70" y="190.0" text-anchor="end">20k</text>
+<line class="grid" x1="78" y1="153.2" x2="710" y2="153.2"/>
+<text class="tick" x="70" y="157.2" text-anchor="end">50k</text>
+<line class="grid" x1="78" y1="128.4" x2="710" y2="128.4"/>
+<text class="tick" x="70" y="132.4" text-anchor="end">100k</text>
+<line class="grid" x1="78" y1="103.6" x2="710" y2="103.6"/>
+<text class="tick" x="70" y="107.6" text-anchor="end">200k</text>
+<line class="grid" x1="78" y1="70.8" x2="710" y2="70.8"/>
+<text class="tick" x="70" y="74.8" text-anchor="end">500k</text>
+<line class="grid" x1="78" y1="46.0" x2="710" y2="46.0"/>
+<text class="tick" x="70" y="50.0" text-anchor="end">1M</text>
+<line class="grid" x1="78.0" y1="46" x2="78.0" y2="458"/>
+<text class="tick" x="78.0" y="476" text-anchor="middle">10k</text>
+<line class="grid" x1="173.1" y1="46" x2="173.1" y2="458"/>
+<text class="tick" x="173.1" y="476" text-anchor="middle">20k</text>
+<line class="grid" x1="298.9" y1="46" x2="298.9" y2="458"/>
+<text class="tick" x="298.9" y="476" text-anchor="middle">50k</text>
+<line class="grid" x1="394.0" y1="46" x2="394.0" y2="458"/>
+<text class="tick" x="394.0" y="476" text-anchor="middle">100k</text>
+<line class="grid" x1="489.1" y1="46" x2="489.1" y2="458"/>
+<text class="tick" x="489.1" y="476" text-anchor="middle">200k</text>
+<line class="grid" x1="614.9" y1="46" x2="614.9" y2="458"/>
+<text class="tick" x="614.9" y="476" text-anchor="middle">500k</text>
+<line class="grid" x1="710.0" y1="46" x2="710.0" y2="458"/>
+<text class="tick" x="710.0" y="476" text-anchor="middle">1M</text>
+<line class="axis" x1="78" y1="46" x2="78" y2="458"/>
+<line class="axis" x1="78" y1="458" x2="710" y2="458"/>
+<text class="label" x="394" y="506" text-anchor="middle">offered load (requests/second)</text>
+<text class="label" x="18" y="252" text-anchor="middle" transform="rotate(-90 18 252)">latency (microseconds)</text>
+<line class="target" x1="78" y1="318.0" x2="710" y2="318.0"/>
+<text class="targetlabel" x="704" y="313.0" text-anchor="end">p99 target 500 us</text>
+<line class="target" x1="78" y1="400.4" x2="710" y2="400.4"/>
+<text class="targetlabel" x="704" y="395.4" text-anchor="end">p50 target 50 us</text>
+<path class="series" stroke="#0072B2" d="M78.0,426.8 L203.7,423.7 L298.9,433.5 L394.0,437.1 L449.6,432.0 L489.1,370.3 L544.8,123.7 L584.3,114.4 L614.9,114.1"/>
+<circle cx="78.0" cy="426.8" r="3" fill="#0072B2"/>
+<circle cx="203.7" cy="423.7" r="3" fill="#0072B2"/>
+<circle cx="298.9" cy="433.5" r="3" fill="#0072B2"/>
+<circle cx="394.0" cy="437.1" r="3" fill="#0072B2"/>
+<circle cx="449.6" cy="432.0" r="3" fill="#0072B2"/>
+<circle cx="489.1" cy="370.3" r="3" fill="#0072B2"/>
+<circle cx="544.8" cy="123.7" r="3" fill="#0072B2"/>
+<circle cx="584.3" cy="114.4" r="3" fill="#0072B2"/>
+<circle cx="614.9" cy="114.1" r="3" fill="#0072B2"/>
+<path class="series" stroke="#D55E00" d="M78.0,394.8 L203.7,401.7 L298.9,399.4 L394.0,303.1 L449.6,195.6 L489.1,141.1 L544.8,113.0 L584.3,108.8 L614.9,101.4"/>
+<circle cx="78.0" cy="394.8" r="3" fill="#D55E00"/>
+<circle cx="203.7" cy="401.7" r="3" fill="#D55E00"/>
+<circle cx="298.9" cy="399.4" r="3" fill="#D55E00"/>
+<circle cx="394.0" cy="303.1" r="3" fill="#D55E00"/>
+<circle cx="449.6" cy="195.6" r="3" fill="#D55E00"/>
+<circle cx="489.1" cy="141.1" r="3" fill="#D55E00"/>
+<circle cx="544.8" cy="113.0" r="3" fill="#D55E00"/>
+<circle cx="584.3" cy="108.8" r="3" fill="#D55E00"/>
+<circle cx="614.9" cy="101.4" r="3" fill="#D55E00"/>
+<path class="series" stroke="#009E73" d="M78.0,359.7 L203.7,378.2 L298.9,365.3 L394.0,221.7 L449.6,173.7 L489.1,139.5 L544.8,105.3 L584.3,99.1 L614.9,96.9"/>
+<circle cx="78.0" cy="359.7" r="3" fill="#009E73"/>
+<circle cx="203.7" cy="378.2" r="3" fill="#009E73"/>
+<circle cx="298.9" cy="365.3" r="3" fill="#009E73"/>
+<circle cx="394.0" cy="221.7" r="3" fill="#009E73"/>
+<circle cx="449.6" cy="173.7" r="3" fill="#009E73"/>
+<circle cx="489.1" cy="139.5" r="3" fill="#009E73"/>
+<circle cx="544.8" cy="105.3" r="3" fill="#009E73"/>
+<circle cx="584.3" cy="99.1" r="3" fill="#009E73"/>
+<circle cx="614.9" cy="96.9" r="3" fill="#009E73"/>
+<path class="series" stroke="#CC79A7" d="M78.0,233.3 L203.7,251.7 L298.9,227.4 L394.0,205.1 L449.6,171.8 L489.1,139.2 L544.8,104.9 L584.3,98.4 L614.9,95.6"/>
+<circle cx="78.0" cy="233.3" r="3" fill="#CC79A7"/>
+<circle cx="203.7" cy="251.7" r="3" fill="#CC79A7"/>
+<circle cx="298.9" cy="227.4" r="3" fill="#CC79A7"/>
+<circle cx="394.0" cy="205.1" r="3" fill="#CC79A7"/>
+<circle cx="449.6" cy="171.8" r="3" fill="#CC79A7"/>
+<circle cx="489.1" cy="139.2" r="3" fill="#CC79A7"/>
+<circle cx="544.8" cy="104.9" r="3" fill="#CC79A7"/>
+<circle cx="584.3" cy="98.4" r="3" fill="#CC79A7"/>
+<circle cx="614.9" cy="95.6" r="3" fill="#CC79A7"/>
+<rect x="724" y="45" width="14" height="3" rx="1.5" fill="#0072B2"/>
+<text class="legend" x="744" y="51">p50</text>
+<rect x="724" y="67" width="14" height="3" rx="1.5" fill="#D55E00"/>
+<text class="legend" x="744" y="73">p99</text>
+<rect x="724" y="89" width="14" height="3" rx="1.5" fill="#009E73"/>
+<text class="legend" x="744" y="95">p99.9</text>
+<rect x="724" y="111" width="14" height="3" rx="1.5" fill="#CC79A7"/>
+<text class="legend" x="744" y="117">p99.99</text>
+</svg>

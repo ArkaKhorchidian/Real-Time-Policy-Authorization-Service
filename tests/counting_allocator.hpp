@@ -62,6 +62,19 @@ void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept {
   return operator new(size, tag);
 }
 
+// Every deallocation path goes through here.
+//
+// GCC's -Wmismatched-new-delete cannot see how these replacement operators
+// pair up. It observes that some allocations come from std::aligned_alloc and
+// that the deletes call std::free, and -- after inlining a std::string
+// destructor several layers deep -- reports a mismatch. Freeing an
+// aligned_alloc pointer with free() is exactly what the standard specifies, so
+// the warning is suppressed across the deallocation operators and nowhere else.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
 void operator delete(void* p) noexcept { std::free(p); }
 void operator delete[](void* p) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t) noexcept { std::free(p); }
@@ -86,5 +99,9 @@ void operator delete(void* p, std::align_val_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::align_val_t) noexcept { std::free(p); }
 void operator delete(void* p, std::size_t, std::align_val_t) noexcept { std::free(p); }
 void operator delete[](void* p, std::size_t, std::align_val_t) noexcept { std::free(p); }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 #endif  // POLICY_DEFINE_COUNTING_ALLOCATOR

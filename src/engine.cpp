@@ -33,15 +33,34 @@ constexpr std::uint64_t kGbrHi = gbr_hi_bits();
   return false;
 }
 
-// usage >= permille/1000 * quota, computed without overflow or division.
-// 128-bit multiply is a single instruction on both x86-64 and AArch64.
+// usage >= permille/1000 * quota, exactly, with no overflow and no division.
+//
+// A 128-bit multiply is a single instruction on both x86-64 and AArch64, so
+// this is the cheapest exact form where the type exists. __extension__ is what
+// keeps -Wpedantic quiet about a type ISO C++ does not have; the fallback below
+// is for compilers that lack it entirely.
+#if defined(__SIZEOF_INT128__)
+__extension__ using WideUnsigned = unsigned __int128;
+
 [[nodiscard]] inline bool usage_at_least_permille(std::uint64_t usage, std::uint64_t quota,
                                                   std::uint32_t permille) noexcept {
   if (quota == 0) return false;  // unmetered plan: no threshold is ever crossed
-  const auto lhs = static_cast<unsigned __int128>(usage) * 1000u;
-  const auto rhs = static_cast<unsigned __int128>(quota) * permille;
+  const auto lhs = static_cast<WideUnsigned>(usage) * 1000u;
+  const auto rhs = static_cast<WideUnsigned>(quota) * permille;
   return lhs >= rhs;
 }
+#else
+[[nodiscard]] inline bool usage_at_least_permille(std::uint64_t usage, std::uint64_t quota,
+                                                  std::uint32_t permille) noexcept {
+  if (quota == 0) return false;
+  // quota * permille / 1000, split so the multiply cannot overflow 64 bits for
+  // any realistic quota. The remainder term keeps it exact rather than
+  // truncating, which matters at a boundary the tests check explicitly.
+  const std::uint64_t whole = (quota / 1000) * permille;
+  const std::uint64_t remainder = ((quota % 1000) * permille) / 1000;
+  return usage >= whole + remainder;
+}
+#endif
 
 }  // namespace
 

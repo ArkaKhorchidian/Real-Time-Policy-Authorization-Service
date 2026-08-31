@@ -1,0 +1,474 @@
+# Policy rule set.
+#
+# This file is compiled, not interpreted. On load every rule below becomes a
+# fixed 64-byte record whose match condition is a single (mask, value) pair over
+# a 64-bit feature word; evaluate() scans them in priority order and stops at
+# the first match. Nothing in this file is looked at again until the next
+# reload.
+#
+# Reload: write a new file and either touch it (the control plane polls mtime)
+# or POST /rules/reload. The swap is an atomic pointer store — in-flight
+# requests finish against the old rule set, the next request sees the new one,
+# and no request is dropped or delayed. Every decision carries the
+# policy_version that produced it.
+#
+# Ordering: rules are evaluated by ascending 'priority'. Ties keep file order.
+# The compiler warns about any rule that can never fire because an earlier one
+# always matches first, so a shadowed rule is caught at load, not in production.
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# DNN / APN table. Wire requests carry the index, not the string — the
+# 'dnn_id' field of PolicyRequest is a position in this list. Appending is
+# safe; reordering or removing an entry renumbers every client's enum.
+# ---------------------------------------------------------------------------
+dnns:
+  - internet     # 0 — general data
+  - ims          # 1 — VoLTE / VoNR signalling and media
+  - sos          # 2 — emergency
+  - iot          # 3 — NB-IoT / LTE-M devices
+  - mms          # 4
+  - tethering    # 5 — separate DNN some operators use for hotspot traffic
+  - enterprise   # 6 — private APN, corporate breakout
+
+# ---------------------------------------------------------------------------
+# Redirect targets, referenced by name from REDIRECT actions.
+# ---------------------------------------------------------------------------
+redirects:
+  top-up-portal: "https://portal.example-mno.net/top-up"
+  device-blocked: "https://portal.example-mno.net/device-blocked"
+  activation: "https://portal.example-mno.net/activate"
+
+# ---------------------------------------------------------------------------
+# Plans. A plan supplies the defaults a rule can inherit: QoS, AMBR, quota,
+# rating group. Restrictions are expressed as rules, not as plan fields, so
+# every denial has a rule id an operator can point at in an audit.
+# ---------------------------------------------------------------------------
+plans:
+  - name: dev-basic
+    qos_5qi: 9              # non-GBR, default bearer
+    arp: 8
+    ambr_ul: 10Mbps
+    ambr_dl: 50Mbps
+    quota: 20GB
+    quota_validity: 30d
+    rating_group: 100
+    tethering: true
+    roaming: true
+
+  - name: dev-pro
+    qos_5qi: 8
+    arp: 5
+    ambr_ul: 50Mbps
+    ambr_dl: 300Mbps
+    quota: 200GB
+    quota_validity: 30d
+    rating_group: 101
+    tethering: true
+    roaming: true
+
+  - name: iot-low-power
+    qos_5qi: 8
+    arp: 11
+    ambr_ul: 1Mbps
+    ambr_dl: 1Mbps
+    quota: 500MB
+    quota_validity: 30d
+    rating_group: 200
+    tethering: false
+    roaming: false
+
+  - name: mvno-prepaid
+    qos_5qi: 9
+    arp: 9
+    ambr_ul: 5Mbps
+    ambr_dl: 25Mbps
+    quota: 5GB
+    quota_validity: 7d
+    rating_group: 300
+    tethering: false
+    roaming: false
+
+  - name: enterprise-fixed
+    qos_5qi: 6
+    arp: 3
+    ambr_ul: 200Mbps
+    ambr_dl: 1Gbps
+    quota: 0                # unmetered
+    rating_group: 400
+    tethering: true
+    roaming: true
+
+# ---------------------------------------------------------------------------
+# Roaming partner networks. A subscriber outside their home PLMN is allowed
+# only on a PLMN in this table, and only if their own subscription permits
+# roaming (rules 30 and 31 below).
+# ---------------------------------------------------------------------------
+roaming_partners:
+  - 310-260     # T-Mobile US
+  - 310-410     # AT&T US
+  - 234-15      # Vodafone UK
+  - 262-01      # Telekom DE
+  - 208-01      # Orange FR
+  - 440-10      # NTT Docomo JP
+  - 505-01      # Telstra AU
+
+# ---------------------------------------------------------------------------
+# Blocked devices (stolen / non-compliant). Inline here for the reference
+# config; in production this is a path to a file with millions of IMEIs, which
+# the compiler loads into the same open-addressing set.
+# ---------------------------------------------------------------------------
+imei_blocklist:
+  - 490154203237518
+  - 356938035643809
+  - 358240051111110
+
+# ---------------------------------------------------------------------------
+# What happens when no rule matches. Deny: a policy engine that fails open is
+# a billing incident and, for a barred device, a compliance one.
+# ---------------------------------------------------------------------------
+default_action:
+  verdict: DENY
+  reason: NO_MATCHING_RULE
+
+# ---------------------------------------------------------------------------
+# Rules, in evaluation order.
+#
+#   1- 19  global gates: emergency, device, subscription status
+#  20- 39  location and roaming
+#  40- 59  DNN and access-type entitlement
+#  60- 79  quota and throttling
+#  80- 99  time-of-day and bonus policy
+# 100-     per-plan defaults, one terminal rule per plan
+# ---------------------------------------------------------------------------
+rules:
+  # --- Emergency ---------------------------------------------------------
+  # Emergency sessions are authorized before any other check, including a
+  # barred subscription and a blocked device. This is a regulatory requirement
+  # (E911 / 112), not a business decision, which is why it sits at priority 1
+  # and is not scoped to a plan.
+  - id: 1
+    name: emergency-session-always-allowed
+    priority: 1
+    when:
+      emergency: true
+    action:
+      verdict: ALLOW
+      reason: OK
+      qos_5qi: 5            # IMS signalling
+      arp: 1
+      ambr_ul: 1Mbps
+      ambr_dl: 1Mbps
+      rating_group: 0       # not rated
+      quota: 0
+      quota_validity: 3600s
+
+  - id: 2
+    name: sos-dnn-always-allowed
+    priority: 2
+    when:
+      dnn: sos
+    action:
+      verdict: ALLOW
+      reason: OK
+      qos_5qi: 5
+      arp: 1
+      ambr_ul: 1Mbps
+      ambr_dl: 1Mbps
+      rating_group: 0
+      quota: 0
+      quota_validity: 3600s
+
+  # --- Device ------------------------------------------------------------
+  - id: 10
+    name: blocked-device
+    priority: 10
+    when:
+      imei_blocked: true
+    action:
+      verdict: REDIRECT
+      reason: IMEI_BLOCKED
+      redirect: device-blocked
+      qos_5qi: 9
+      arp: 15
+      ambr_ul: 64            # 64 kbps — enough to reach the portal, nothing else
+      ambr_dl: 128
+      rating_group: 0
+      quota: 10MB
+      quota_validity: 900s
+      flags: [throttled]
+
+  # --- Subscription status -----------------------------------------------
+  - id: 11
+    name: unknown-subscriber
+    priority: 11
+    when:
+      status: UNKNOWN
+    action:
+      verdict: DENY
+      reason: UNKNOWN_SUBSCRIBER
+
+  - id: 12
+    name: barred-subscriber
+    priority: 12
+    when:
+      status: BARRED
+    action:
+      verdict: DENY
+      reason: SUBSCRIBER_BARRED
+
+  - id: 13
+    name: suspended-subscriber-to-portal
+    priority: 13
+    when:
+      status: SUSPENDED
+    action:
+      verdict: REDIRECT
+      reason: SUBSCRIBER_SUSPENDED
+      redirect: activation
+      qos_5qi: 9
+      arp: 15
+      ambr_ul: 64
+      ambr_dl: 128
+      rating_group: 0
+      quota: 10MB
+      quota_validity: 900s
+      flags: [throttled]
+
+  # --- Roaming -----------------------------------------------------------
+  - id: 30
+    name: roaming-not-entitled
+    priority: 30
+    when:
+      roaming: true
+      roaming_allowed: false
+    action:
+      verdict: DENY
+      reason: ROAMING_NOT_ALLOWED
+      flags: [roaming_restricted]
+
+  - id: 31
+    name: roaming-on-non-partner-network
+    priority: 31
+    when:
+      roaming: true
+      roaming_partner: false
+    action:
+      verdict: DENY
+      reason: PLMN_NOT_PARTNER
+      flags: [roaming_restricted]
+
+  # IoT devices are provisioned for a single home network. Anything else is
+  # either a cloned SIM or a device that has physically moved, and both want a
+  # human to look at them.
+  - id: 32
+    name: iot-home-network-only
+    priority: 32
+    plans: iot-low-power
+    when:
+      roaming: true
+    action:
+      verdict: DENY
+      reason: PLMN_NOT_PARTNER
+      flags: [roaming_restricted]
+
+  # --- DNN / access-type entitlement -------------------------------------
+  - id: 40
+    name: iot-no-ims
+    priority: 40
+    plans: iot-low-power
+    when:
+      dnn: [ims, mms, tethering]
+    action:
+      verdict: DENY
+      reason: DNN_NOT_ALLOWED
+
+  - id: 41
+    name: enterprise-dnn-restricted-to-enterprise-plan
+    priority: 41
+    plans: [dev-basic, dev-pro, iot-low-power, mvno-prepaid]
+    when:
+      dnn: enterprise
+    action:
+      verdict: DENY
+      reason: DNN_NOT_ALLOWED
+
+  - id: 42
+    name: tethering-not-entitled
+    priority: 42
+    when:
+      tethering_detected: true
+      tethering_allowed: false
+    action:
+      verdict: DENY
+      reason: TETHERING_BLOCKED
+      flags: [tethering_blocked]
+
+  # NB-IoT devices have no business on Wi-Fi offload, and a request claiming
+  # otherwise is a misconfigured device.
+  - id: 43
+    name: iot-no-wlan
+    priority: 43
+    plans: iot-low-power
+    when:
+      rat: WLAN
+    action:
+      verdict: DENY
+      reason: RAT_NOT_ALLOWED
+
+  # --- Quota and throttling ----------------------------------------------
+  # Off-peak bonus first: between 02:00 and 06:00 local, an over-quota
+  # subscriber on a consumer plan gets a metered-but-usable window instead of
+  # the throttle. Priority 60 puts it ahead of the throttle rules.
+  - id: 60
+    name: off-peak-bonus-window
+    priority: 60
+    plans: [dev-basic, dev-pro]
+    when:
+      quota_exhausted: true
+      time_between: { start: "02:00", end: "06:00" }
+    action:
+      verdict: ALLOW
+      reason: OFF_PEAK_BONUS
+      inherit: [qos, rating_group]
+      ambr_ul: 5Mbps
+      ambr_dl: 25Mbps
+      quota: 2GB
+      quota_validity: 4h
+      flags: [off_peak_bonus]
+
+  - id: 61
+    name: dev-basic-post-quota-throttle
+    priority: 61
+    plans: dev-basic
+    when:
+      quota_exhausted: true
+    action:
+      verdict: ALLOW
+      reason: QUOTA_EXHAUSTED_THROTTLED
+      inherit: [qos, rating_group]
+      ambr_ul: 1Mbps
+      ambr_dl: 1Mbps
+      quota: 1GB
+      quota_validity: 24h
+      flags: [throttled]
+
+  - id: 62
+    name: dev-pro-post-quota-throttle
+    priority: 62
+    plans: dev-pro
+    when:
+      quota_exhausted: true
+    action:
+      verdict: ALLOW
+      reason: QUOTA_EXHAUSTED_THROTTLED
+      inherit: [qos, rating_group]
+      ambr_ul: 5Mbps
+      ambr_dl: 10Mbps
+      quota: 10GB
+      quota_validity: 24h
+      flags: [throttled]
+
+  # Prepaid does not degrade, it stops — and sends the subscriber somewhere
+  # they can pay.
+  - id: 63
+    name: prepaid-out-of-credit
+    priority: 63
+    plans: mvno-prepaid
+    when:
+      quota_exhausted: true
+    action:
+      verdict: REDIRECT
+      reason: QUOTA_EXHAUSTED
+      redirect: top-up-portal
+      qos_5qi: 9
+      arp: 15
+      ambr_ul: 64
+      ambr_dl: 128
+      rating_group: 0
+      quota: 10MB
+      quota_validity: 900s
+      flags: [throttled]
+
+  - id: 64
+    name: iot-quota-exhausted
+    priority: 64
+    plans: iot-low-power
+    when:
+      quota_exhausted: true
+    action:
+      verdict: DENY
+      reason: QUOTA_EXHAUSTED
+
+  # Approaching the limit: still full speed, but the reply carries a warning
+  # flag the serving node turns into a notification.
+  - id: 70
+    name: quota-warning-at-80-percent
+    priority: 70
+    plans: [dev-basic, dev-pro, mvno-prepaid]
+    when:
+      usage_above: 80%
+    action:
+      verdict: ALLOW
+      reason: OK
+      inherit: all
+      flags: [quota_warning]
+
+  # --- Per-plan defaults --------------------------------------------------
+  # One terminal rule per plan. Reaching here means nothing above objected, so
+  # the subscriber gets exactly what they pay for.
+  - id: 100
+    name: dev-basic-default
+    priority: 100
+    plans: dev-basic
+    when:
+      status: ACTIVE
+    action:
+      verdict: ALLOW
+      reason: PLAN_DEFAULT
+      inherit: all
+
+  - id: 101
+    name: dev-pro-default
+    priority: 101
+    plans: dev-pro
+    when:
+      status: ACTIVE
+    action:
+      verdict: ALLOW
+      reason: PLAN_DEFAULT
+      inherit: all
+
+  - id: 102
+    name: iot-default
+    priority: 102
+    plans: iot-low-power
+    when:
+      status: ACTIVE
+    action:
+      verdict: ALLOW
+      reason: PLAN_DEFAULT
+      inherit: all
+
+  - id: 103
+    name: mvno-prepaid-default
+    priority: 103
+    plans: mvno-prepaid
+    when:
+      status: ACTIVE
+    action:
+      verdict: ALLOW
+      reason: PLAN_DEFAULT
+      inherit: all
+
+  - id: 104
+    name: enterprise-default
+    priority: 104
+    plans: enterprise-fixed
+    when:
+      status: ACTIVE
+    action:
+      verdict: ALLOW
+      reason: PLAN_DEFAULT
+      inherit: all

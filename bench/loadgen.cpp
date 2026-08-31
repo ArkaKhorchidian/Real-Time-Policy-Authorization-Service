@@ -320,6 +320,14 @@ class HttpPool {
         c.busy = false;
         c.in_len = 0;
         ++completed;
+      } else if (c.in_len >= c.in.size()) {
+        // A response that fills the buffer without completing is not one this
+        // client understands, and continuing would hand recv() a zero-length
+        // buffer forever. Drop the connection; the timeout sweep reopens it.
+        ::close(c.fd);
+        c.fd = -1;
+        c.busy = false;
+        c.in_len = 0;
       }
     }
     return completed;

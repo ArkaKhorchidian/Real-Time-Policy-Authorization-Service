@@ -11,28 +11,48 @@ number produced by a client that hides tails is worse than no number.
 **The headline, measured rather than claimed:**
 
 <!-- BENCH:targets -->
-Measured at **100,000 QPS offered, one worker**, 0.0000% loss (1,800,000 replies over the measurement window).
+Measured at **100,000 QPS offered, one worker**, the median of 5 runs, 0.0000% loss (9,000,000 replies).
 
 | Metric | Target | Measured | |
 |---|---:|---:|:--|
-| p50 | < 50 µs | 18.0 µs | met |
-| p99 | < 500 µs | 758.8 µs | **missed** |
-| p99.9 | < 1,000 µs | 7376.9 µs | **missed** |
-| p99.99 | < 2,000 µs | 11,731 µs | **missed** |
+| p50 | < 50 µs | 18.9 µs | met |
+| p99 | < 500 µs | 374.3 µs | met |
+| p99.9 | < 1,000 µs | 1453.1 µs | **missed** |
+| p99.99 | < 2,000 µs | 2639.9 µs | **missed** |
 | throughput | ≥ 100k QPS/core | 100,000 QPS | met |
 
 The server's own view of the same run — decode, subscriber lookup, `evaluate()`, encode, excluding the syscalls on either side:
 
 | | p50 | p99 | p99.9 | max |
 |---|---:|---:|---:|---:|
-| service time | 125 ns | 458 ns | 1083 ns | 58536 ns |
+| service time | 83 ns | 292 ns | 500 ns | 38392 ns |
 <!-- /BENCH:targets -->
 
 The interesting part is the gap between those two tables. The end-to-end p99 is
-three orders of magnitude larger than the decision that caused it. **The policy
-evaluation is effectively free; everything else is syscalls, scheduling and the
-network stack.** That is the finding this project exists to produce, and
+roughly a thousand times the decision that caused it. **The policy evaluation is
+effectively free; everything else is syscalls, scheduling and the network
+stack.** That is the finding this project exists to produce, and
 [what it implies](#what-this-actually-shows) is at the bottom.
+
+**About the two targets that were missed.** p50, p99 and throughput are met.
+p99.9 and p99.99 are not, and the reason is the host rather than the service.
+These figures come from macOS on Apple Silicon, where there is no
+`sched_setaffinity`, no `recvmmsg` and no `SO_REUSEPORT` load balancing — a
+busy-polling worker can be descheduled or moved to an efficiency core mid-run,
+and that lands squarely in p99.9. The [repeatability table](#repeatability) is
+the evidence: five runs of the identical binary at the identical load spread
+2.3× at p99, which is wider than several of the differences this page is trying
+to show. So the right statement is that **the two tail targets are unverified on
+this hardware, not that they were missed by the design.** The Linux fast paths
+are written and exercised in CI but unmeasured here; re-taking these on an
+isolated Linux box with a fixed frequency governor is the first item in
+[what I'd do next](#known-limitations-and-what-id-do-next).
+
+What is not in doubt is the shape of the result. The server's own service time
+is a few hundred nanoseconds at p99 while the end-to-end p99 is a few hundred
+*micro*seconds — a factor of roughly a thousand that no amount of hardware
+tuning will move into the decision path, because the decision path is not where
+it lives.
 
 ---
 
@@ -125,15 +145,15 @@ project is about.
 <!-- BENCH:sweep -->
 | Offered | Achieved | Loss | p50 | p90 | p99 | p99.9 | p99.99 | max |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 10,000 | 10,000 | 0 | 23.9 | 38.4 | 58.5 | 155.9 | 5333.0 | 6676.0 |
-| 25,000 | 25,000 | 0 | 26.1 | 30.3 | 48.3 | 93.1 | 3188.7 | 4545.4 |
-| 50,000 | 50,000 | 0 | 19.8 | 23.8 | 51.4 | 133.2 | 6291.4 | 7483.1 |
-| 100,000 | 100,000 | 0 | 18.0 | 31.6 | 758.8 | 7376.9 | 11,731 | 12,542 |
-| 150,000 | 150,005 | 0 | 20.7 | 92.7 | 15,278 | 28,164 | 29,721 | 29,948 |
-| 200,000 | 200,856 | 0.94% ⚠️ | 116.0 | 60,162 | 70,124 | 73,400 | 73,859 | 73,862 |
-| 300,000 | 188,642 | 36.98% ⚠️ | 114,164 | 118,751 | 153,616 | 190,579 | 192,938 | 193,150 |
-| 400,000 | 146,654 | 63.45% ⚠️ | 147,980 | 153,092 | 173,015 | 227,017 | 230,949 | 232,938 |
-| 500,000 | 121,886 | 75.41% ⚠️ | 149,160 | 155,582 | 212,730 | 241,304 | 250,216 | 255,641 |
+| 10,000 | 10,000 | 0 | 31.3 | 45.5 | 53.5 | 87.9 | 118.8 | 266.9 |
+| 25,000 | 25,000 | 0 | 21.5 | 24.8 | 45.1 | 90.4 | 1859.6 | 3157.9 |
+| 50,000 | 50,000 | 0 | 18.7 | 21.0 | 49.1 | 352.3 | 6733.8 | 8068.8 |
+| 100,000 | 100,000 | 0 | 17.3 | 28.8 | 625.2 | 9453.6 | 13,394 | 14,296 |
+| 150,000 | 150,004 | 0.15% ⚠️ | 17.8 | 195.8 | 25,739 | 38,699 | 39,518 | 39,700 |
+| 200,000 | 199,602 | 0.15% ⚠️ | 66,290 | 97,583 | 114,491 | 128,647 | 130,875 | 131,275 |
+| 300,000 | 181,310 | 39.09% ⚠️ | 118,424 | 129,368 | 151,519 | 182,059 | 183,894 | 184,397 |
+| 400,000 | 147,887 | 62.60% ⚠️ | 146,670 | 152,306 | 201,982 | 233,439 | 237,240 | 237,700 |
+| 500,000 | 127,619 | 74.23% ⚠️ | 146,014 | 150,864 | 179,831 | 220,070 | 225,837 | 227,981 |
 
 All figures in microseconds. ⚠️ marks a row whose loss exceeds 0.01%, where the percentiles are over received replies only and the tail is therefore understated.
 <!-- /BENCH:sweep -->
@@ -150,10 +170,10 @@ Same server, same binary, same 150,000 QPS asked for. The only difference is whe
 
 | | Achieved | p50 | p99 | p99.9 | p99.99 | max |
 |---|---:|---:|---:|---:|---:|---:|
-| open loop (fixed schedule) | 149,806 QPS | 20.2 | 154,927 | 164,102 | 165,413 | 165,531 |
-| closed loop (send, wait, send) | 109,034 QPS | 17.6 | 30.9 | 54.3 | 83.8 | 255.5 |
+| open loop (fixed schedule) | 150,004 QPS | 17.3 | 6393.9 | 13,771 | 15,049 | 15,344 |
+| closed loop (send, wait, send) | 112,810 QPS | 17.1 | 25.8 | 52.9 | 84.2 | 288.8 |
 
-The closed-loop client reports a p99 **5007× better** while actually delivering **27% less load than it was asked for**. It looks faster because it gave up.
+The closed-loop client reports a p99 **248× better** while actually delivering **25% less load than it was asked for**. It looks faster because it gave up.
 <!-- /BENCH:omission -->
 
 This is the whole argument for open-loop measurement in one table. A client that
@@ -177,9 +197,9 @@ A rule reload every 5 s across a 15 s run at a steady 100,000 QPS — 3 swaps wh
 
 | | Value |
 |---|---:|
-| p99 across the run, best second | 103.2 µs |
-| p99 across the run, worst second | 4812.8 µs |
-| spread between them | 4709.6 µs |
+| p99 across the run, best second | 40.2 µs |
+| p99 across the run, worst second | 1006.6 µs |
+| spread between them | 966.4 µs |
 | replies per second, min / max | 99,999 / 100,001 |
 | requests dropped by a reload | 0 |
 
@@ -199,10 +219,12 @@ to compile never goes live and the previous policy keeps serving.
 <!-- BENCH:batch -->
 | Batch cap | Mean realized batch | p50 | p99 | p99.9 | Achieved |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 1 | 17.8 | 989.7 | 10,035 | 100,000 QPS |
-| 8 | 1.09 | 17.9 | 1008.1 | 5693.4 | 100,000 QPS |
-| 32 | 1.08 | 19.0 | 490.5 | 1465.3 | 100,000 QPS |
-| 128 | 1.06 | 17.9 | 555.0 | 2578.4 | 100,000 QPS |
+| 1 | 1 | 18.5 | 1455.1 | 6017.0 | 100,000 QPS |
+| 8 | 1.03 | 18.0 | 370.7 | 1988.6 | 100,000 QPS |
+| 32 | 1.03 | 17.9 | 586.2 | 3842.1 | 100,000 QPS |
+| 128 | 1.02 | 17.1 | 607.2 | 1707.0 | 100,000 QPS |
+
+For scale: repeated runs of one unchanging configuration span 200.2–468.0 µs at p99 on this host. Only differences larger than that are real, which here means cap 1 is genuinely worse and the rest are indistinguishable — the realized batch never approaches the larger caps, so raising them changes nothing.
 <!-- /BENCH:batch -->
 
 The tradeoff: a larger cap amortizes the syscall over more datagrams, but the
@@ -215,10 +237,10 @@ doing nothing, which is the useful thing this sweep tells you.
 <!-- BENCH:poll -->
 | Busy-poll budget | p50 | p99 | p99.9 | p99.99 |
 |---:|---:|---:|---:|---:|
-| 0 (park immediately) | 27.4 | 39.4 | 69.1 | 129.7 |
-| 10 µs | 27.6 | 44.7 | 101.0 | 3715.1 |
-| 50 µs | 26.9 | 44.4 | 87.1 | 329.7 |
-| 200 µs | 19.1 | 38.3 | 76.2 | 4788.2 |
+| 0 (park immediately) | 23.5 | 53.5 | 4517.9 | 8863.7 |
+| 10 µs | 21.5 | 40.9 | 67.3 | 137.0 |
+| 50 µs | 21.7 | 30.8 | 66.9 | 122.8 |
+| 200 µs | 18.5 | 27.9 | 49.9 | 105.7 |
 <!-- /BENCH:poll -->
 
 Run deliberately at a low rate, because the wake-up cost only appears when the
@@ -229,6 +251,18 @@ the price of a core burning at 100%.
 ### Protocol overhead
 
 <!-- BENCH:protocol -->
+Same server, same rule table, same subscriber store, same offered load. The only difference is what goes over the wire.
+
+| Protocol | Achieved | p50 | p99 | p99.9 | Bytes per exchange |
+|---|---:|---:|---:|---:|---:|
+| binary over UDP | 100,000 QPS | 19.1 µs | 420.4 µs | 1585.2 µs | 64 + 64 |
+| HTTP/1.1 GET + JSON | 100,000 QPS | 45.2 µs | 101.3 µs | 530.9 µs | ~190 + ~300 |
+
+**The protocol costs +26.0 µs at the median** (2.36×) for the same decision: request formatting on the client, a TCP round trip instead of a datagram, header parsing on the server, and roughly 490 bytes on the wire instead of 128.
+
+That figure is a lower bound. The HTTP request here is a GET with query parameters and no body, on a kept-alive connection: nothing to decode on the way in, no TLS. A gRPC or Npcf front with protobuf framing, HTTP/2 flow control and TLS costs more, not less.
+
+**Compare the medians, not the tails.** The two clients have different shapes — the HTTP generator holds 64 connections per thread, which absorbs jitter the single UDP socket passes straight through, and on this run it missed its own schedule on 1.2% of sends. The tail columns above therefore describe the two clients as much as the two protocols, and the honest number to take from this table is the p50 delta.
 <!-- /BENCH:protocol -->
 
 The service also exposes the same decision over HTTP, at
@@ -252,6 +286,25 @@ compiled rule table, reachable with curl.
 ### Repeatability
 
 <!-- BENCH:repeat -->
+5 runs of the same configuration, same load, with an idle gap between each. Identical inputs, so the spread is the machine.
+
+| | Best | Median | Worst | Worst / best |
+|---|---:|---:|---:|---:|
+| p50 | 17.2 µs | 18.9 µs | 19.9 µs | 1.2× |
+| p99 | 200.2 µs | 374.3 µs | 468.0 µs | 2.3× |
+| p99.9 | 1370.1 µs | 1453.1 µs | 2476.0 µs | 1.8× |
+
+Per run, with the generator's own health alongside — a run where the generator missed its schedule was measuring the generator:
+
+| Run | p50 | p99 | p99.9 | Loss | Generator schedule slips |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 19.9 | 374.3 | 1523.7 | 0.000% | 0.14% |
+| 2 | 18.0 | 468.0 | 2476.0 | 0.000% | 0.23% |
+| 3 | 19.1 | 240.4 | 1370.1 | 0.000% | 0.23% |
+| 4 | 17.2 | 447.0 | 1453.1 | 0.000% | 0.46% |
+| 5 | 18.9 | 200.2 | 1416.2 | 0.000% | 0.13% |
+
+No run here was flagged: the generator stayed within 0.46% of its schedule throughout, so the spread above is the server and the machine rather than the measuring instrument.
 <!-- /BENCH:repeat -->
 
 One run is not a result, and this is the section that says so out loud. The
@@ -269,9 +322,9 @@ page means anything.
 <!-- BENCH:scaling -->
 | Workers | Achieved | Loss | Replies dropped by the server | p50 | p99 | p99.9 |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1 | 100,000 QPS | 0.00% | 0 | 19.6 | 404.2 | 825.3 |
-| 2 | 83,486 QPS | 16.50% | 296977 | 25.1 | 71.0 | 94.5 |
-| 4 | 63,745 QPS | 36.21% | 651720 | 81.0 | 276.2 | 3248.1 |
+| 1 | 100,000 QPS | 0.00% | 0 | 17.5 | 432.1 | 1725.4 |
+| 2 | 91,798 QPS | 8.03% | 144481 | 18.1 | 52.2 | 76.7 |
+| 4 | 64,986 QPS | 35.06% | 631097 | 78.3 | 464.6 | 752.1 |
 <!-- /BENCH:scaling -->
 
 **Read this table with the platform in mind.** On Linux each worker owns an
@@ -290,7 +343,7 @@ reports which path this build has.
 
 <!-- BENCH:environment -->
 ```
-Captured: 2026-08-31T01:18:37Z
+Captured: 2026-08-31T01:58:15Z
 Host OS:  Darwin 25.5.0 arm64
 
 --- CPU ---
@@ -393,7 +446,8 @@ Full detail in [docs/architecture.md](docs/architecture.md).
 
 ```
 $ ctest --test-dir build --output-on-failure
-122 case(s) run, 0 failed, 0 assertion failure(s)
+$ ./build/bin/policy-tests
+128 case(s) run, 0 failed, 0 assertion failure(s)
 ```
 
 Clean under AddressSanitizer/UBSan and ThreadSanitizer. The tests that earn
@@ -489,10 +543,13 @@ bench/
   plot.py               dependency-free SVG, light and dark themes
   update_readme.py      regenerates this file's tables from the CSVs
   results/              committed: environment, raw CSVs, figures
-tests/                  122 cases: unit, property, golden, concurrency
+tests/                  unit, property, golden and concurrency cases
 tools/                  synthetic roster and golden corpus generators
+scripts/
+  smoke.sh              start it, drive it, reload it, shut it down
 config/rules.yaml       a realistic operator policy
 docs/                   architecture, policy authoring, measurement method
+.github/workflows/      Linux (gcc + clang), macOS, ASan, TSan, bench harness
 ```
 
 ---

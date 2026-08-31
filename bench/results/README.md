@@ -7,10 +7,11 @@ data they came from rather than taken on trust.
 | File | What it is |
 |---|---|
 | `environment.txt` | The machine, kernel, build and core placement each run used. Regenerated on every run. |
-| `summary.csv` | One row per load-generator run: offered and achieved throughput, loss, and the latency percentiles. |
+| `summary.csv` | One row per load-generator run: protocol, offered and achieved throughput, loss, and the latency percentiles. |
 | `server_stats.csv` | The server's own counters for the same runs — send failures, realized batch size, and service time (the compute path alone, excluding syscalls). |
 | `sweep_*.hdr.csv` | Full percentile distributions for the latency-versus-throughput sweep, in HdrHistogram CSV form. |
 | `omission_open.hdr.csv`, `omission_closed.hdr.csv` | The same server under an open-loop and a closed-loop client. |
+| `protocol_udp.hdr.csv`, `protocol_http.hdr.csv` | The same decision path reached over the binary UDP format and over HTTP/1.1 + JSON. The difference is the protocol overhead. |
 | `hot_reload.timeline.csv` | Per-second throughput and p99 across a run with a rule reload every 5 s. |
 | `*.svg` | Figures, rendered by `bench/plot.py`. They adapt to light and dark themes. |
 
@@ -26,6 +27,11 @@ data they came from rather than taken on trust.
 - **`loss_pct` above 0.01% invalidates the tail.** Percentiles are computed over
   replies actually received, so a run that lost datagrams has had its slowest
   samples silently removed. The generator exits non-zero in that case.
+- **Run-to-run spread is reported, not hidden.** The `repeat-*` rows are the same
+  configuration run several times with an idle gap between. On a machine with no
+  core isolation the spread can be larger than most of the differences this
+  directory is trying to show, and reading any single row without looking at
+  those first will mislead you.
 - **Server and generator share one host over loopback** unless
   `environment.txt` says otherwise. That removes the NIC and the wire from the
   path — which flatters the absolute numbers — while adding contention for

@@ -304,10 +304,14 @@ void HttpFrontServer::worker_loop(std::size_t index, int listen_fd) {
     return;
   }
 
+  // Swap-remove. The loop below walks connections downwards, so the element
+  // moved into slot i has already been processed this round and cannot be
+  // visited twice. Moved rather than copied: a Connection owns two buffers and
+  // copying them would be five kilobytes per close for no reason.
   auto close_conn = [&](std::size_t i) {
     ::close(w.conns[i].fd);
     ++w.stats.connections_closed;
-    w.conns[i] = w.conns.back();
+    w.conns[i] = std::move(w.conns.back());
     w.conns.pop_back();
   };
 

@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520" width="900" height="520" role="img" aria-label="Worker scaling at a fixed offered load">
+<style>
+  :root { --bg:#ffffff; --fg:#1a1a1a; --muted:#6b7280; --grid:#e5e7eb; --axis:#9ca3af; --target:#b91c1c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --grid:#21262d; --axis:#484f58; --target:#f85149; }
+  }
+
+  .bg { fill: var(--bg); }
+  .grid { stroke: var(--grid); stroke-width: 1; }
+  .axis { stroke: var(--axis); stroke-width: 1.5; }
+  .tick { fill: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .label { fill: var(--fg); font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .title { fill: var(--fg); font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .sub { fill: var(--muted); font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .legend { fill: var(--fg); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .series { fill: none; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+  .target { stroke: var(--target); stroke-width: 1.4; stroke-dasharray: 5 4; fill: none; }
+  .targetlabel { fill: var(--target); font: 11px -apple-system, BlinkMacSystemFont, sans-serif; }
+</style>
+<rect class="bg" width="900" height="520"/>
+<text class="title" x="78" y="22">Worker scaling at a fixed offered load</text>
+<text class="sub" x="78" y="39">same offered load, 1/2/4 worker threads. Flat is good: it means workers are not contending.</text>
+<line class="grid" x1="78" y1="458.0" x2="710" y2="458.0"/>
+<text class="tick" x="70" y="462.0" text-anchor="end">10</text>
+<line class="grid" x1="78" y1="416.7" x2="710" y2="416.7"/>
+<text class="tick" x="70" y="420.7" text-anchor="end">20</text>
+<line class="grid" x1="78" y1="362.0" x2="710" y2="362.0"/>
+<text class="tick" x="70" y="366.0" text-anchor="end">50</text>
+<line class="grid" x1="78" y1="320.7" x2="710" y2="320.7"/>
+<text class="tick" x="70" y="324.7" text-anchor="end">100</text>
+<line class="grid" x1="78" y1="279.3" x2="710" y2="279.3"/>
+<text class="tick" x="70" y="283.3" text-anchor="end">200</text>
+<line class="grid" x1="78" y1="224.7" x2="710" y2="224.7"/>
+<text class="tick" x="70" y="228.7" text-anchor="end">500</text>
+<line class="grid" x1="78" y1="183.3" x2="710" y2="183.3"/>
+<text class="tick" x="70" y="187.3" text-anchor="end">1k</text>
+<line class="grid" x1="78" y1="142.0" x2="710" y2="142.0"/>
+<text class="tick" x="70" y="146.0" text-anchor="end">2k</text>
+<line class="grid" x1="78" y1="87.3" x2="710" y2="87.3"/>
+<text class="tick" x="70" y="91.3" text-anchor="end">5k</text>
+<line class="grid" x1="78" y1="46.0" x2="710" y2="46.0"/>
+<text class="tick" x="70" y="50.0" text-anchor="end">10k</text>
+<line class="grid" x1="78.0" y1="46" x2="78.0" y2="458"/>
+<text class="tick" x="78.0" y="476" text-anchor="middle">1.0</text>
+<line class="grid" x1="183.3" y1="46" x2="183.3" y2="458"/>
+<text class="tick" x="183.3" y="476" text-anchor="middle">1.5</text>
+<line class="grid" x1="288.7" y1="46" x2="288.7" y2="458"/>
+<text class="tick" x="288.7" y="476" text-anchor="middle">2.0</text>
+<line class="grid" x1="394.0" y1="46" x2="394.0" y2="458"/>
+<text class="tick" x="394.0" y="476" text-anchor="middle">2.5</text>
+<line class="grid" x1="499.3" y1="46" x2="499.3" y2="458"/>
+<text class="tick" x="499.3" y="476" text-anchor="middle">3.0</text>
+<line class="grid" x1="604.7" y1="46" x2="604.7" y2="458"/>
+<text class="tick" x="604.7" y="476" text-anchor="middle">3.5</text>
+<line class="grid" x1="710.0" y1="46" x2="710.0" y2="458"/>
+<text class="tick" x="710.0" y="476" text-anchor="middle">4.0</text>
+<line class="axis" x1="78" y1="46" x2="78" y2="458"/>
+<line class="axis" x1="78" y1="458" x2="710" y2="458"/>
+<text class="label" x="394" y="506" text-anchor="middle">worker threads</text>
+<text class="label" x="18" y="252" text-anchor="middle" transform="rotate(-90 18 252)">latency (microseconds)</text>
+<path class="series" stroke="#0072B2" d="M78.0,424.5 L288.7,422.7 L710.0,335.3"/>
+<circle cx="78.0" cy="424.5" r="3" fill="#0072B2"/>
+<circle cx="288.7" cy="422.7" r="3" fill="#0072B2"/>
+<circle cx="710.0" cy="335.3" r="3" fill="#0072B2"/>
+<path class="series" stroke="#D55E00" d="M78.0,233.4 L288.7,359.5 L710.0,229.0"/>
+<circle cx="78.0" cy="233.4" r="3" fill="#D55E00"/>
+<circle cx="288.7" cy="359.5" r="3" fill="#D55E00"/>
+<circle cx="710.0" cy="229.0" r="3" fill="#D55E00"/>
+<path class="series" stroke="#009E73" d="M78.0,150.8 L288.7,336.5 L710.0,200.3"/>
+<circle cx="78.0" cy="150.8" r="3" fill="#009E73"/>
+<circle cx="288.7" cy="336.5" r="3" fill="#009E73"/>
+<circle cx="710.0" cy="200.3" r="3" fill="#009E73"/>
+<rect x="724" y="45" width="14" height="3" rx="1.5" fill="#0072B2"/>
+<text class="legend" x="744" y="51">p50</text>
+<rect x="724" y="67" width="14" height="3" rx="1.5" fill="#D55E00"/>
+<text class="legend" x="744" y="73">p99</text>
+<rect x="724" y="89" width="14" height="3" rx="1.5" fill="#009E73"/>
+<text class="legend" x="744" y="95">p99.9</text>
+</svg>

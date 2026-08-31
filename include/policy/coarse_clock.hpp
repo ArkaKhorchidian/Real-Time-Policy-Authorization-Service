@@ -22,6 +22,11 @@
 
 namespace policy {
 
+// Fixed instant used by the golden corpus. Period-expiry decisions depend on
+// wall-clock time; pinning it here is what keeps the committed golden file from
+// changing with the calendar. 2026-09-01T00:00:00Z.
+inline constexpr std::uint64_t kGoldenClockUnixS = 1787788800ull;
+
 namespace detail {
 inline std::atomic<std::uint64_t> g_coarse_unix_s{0};
 }

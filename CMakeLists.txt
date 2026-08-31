@@ -134,7 +134,9 @@ add_library(policy_core STATIC
   src/subscriber_store.cpp
   src/engine.cpp
   src/config.cpp
-  src/logging.cpp)
+  src/logging.cpp
+  src/metrics.cpp
+  src/golden.cpp)
 target_include_directories(policy_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_CURRENT_BINARY_DIR}/generated)

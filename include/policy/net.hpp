@@ -110,8 +110,12 @@ class BatchIo {
   // receive slot `src`.
   void stage_reply(std::uint32_t out, std::uint32_t src, const void* reply64);
 
-  // Send the first `count` staged replies. Returns the number sent, or -1.
-  [[nodiscard]] int send_batch(std::uint32_t count);
+  // Send the first `count` staged replies. Returns the number actually sent,
+  // or -1. When it sends fewer than asked, `*out_errno` (if given) receives the
+  // errno that stopped it — the difference between a full socket buffer
+  // (EAGAIN), an overflowing interface queue (ENOBUFS) and a real error matters
+  // enough to a person debugging a drop rate that it must not be discarded.
+  [[nodiscard]] int send_batch(std::uint32_t count, int* out_errno = nullptr);
 
   // Block until the socket is readable or `timeout_us` elapses. Returns true if
   // readable. Used after the busy-poll budget is spent.

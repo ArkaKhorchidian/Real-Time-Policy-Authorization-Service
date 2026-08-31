@@ -318,6 +318,12 @@ HttpResponse ControlPlane::handle_metrics(const HttpRequest&) const {
   counter("policy_unknown_subscriber_total", "Requests whose IMSI is not provisioned.",
           snap.unknown_subscriber);
   counter("policy_send_failures_total", "Replies the kernel would not accept.", snap.send_failures);
+  counter("policy_send_wouldblock_total", "Replies dropped because the socket send buffer was full.",
+          snap.send_wouldblock);
+  counter("policy_send_nobufs_total", "Replies dropped because the interface queue was full.",
+          snap.send_nobufs);
+  counter("policy_send_errors_total", "Replies dropped by a non-transient send error.",
+          snap.send_errors);
   counter("policy_recv_errors_total", "Receive errors.", snap.recv_errors);
   counter("policy_batches_total", "Receive batches processed.", snap.batches);
   counter("policy_full_batches_total", "Batches that hit the batch cap (the loop is saturated).",
@@ -395,6 +401,9 @@ HttpResponse ControlPlane::handle_stats(const HttpRequest&) const {
      << "  \"short_datagrams\": " << snap.short_datagrams << ",\n"
      << "  \"bad_magic\": " << snap.bad_magic << ",\n"
      << "  \"send_failures\": " << snap.send_failures << ",\n"
+     << "  \"send_wouldblock\": " << snap.send_wouldblock << ",\n"
+     << "  \"send_nobufs\": " << snap.send_nobufs << ",\n"
+     << "  \"send_errors\": " << snap.send_errors << ",\n"
      << "  \"mean_batch\": " << snap.mean_batch() << ",\n"
      << "  \"service_ns\": {\"p50\": " << snap.service_ns.value_at_percentile(50)
      << ", \"p99\": " << snap.service_ns.value_at_percentile(99)

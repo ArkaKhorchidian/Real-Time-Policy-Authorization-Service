@@ -222,8 +222,14 @@ class IoUringServer final : public IngestServer {
         const int res = cqe->res;
 
         if (user_data_op(ud) == kOpSend) {
-          if (res < 0) ++m.send_failures;
-          else ++m.replies_sent;
+          if (res < 0) {
+            ++m.send_failures;
+            if (res == -ENOBUFS) ++m.send_nobufs;
+            else if (res == -EAGAIN) ++m.send_wouldblock;
+            else ++m.send_errors;
+          } else {
+            ++m.replies_sent;
+          }
           free_send.push_back(static_cast<std::uint32_t>(idx));
           continue;
         }
@@ -270,11 +276,13 @@ class IoUringServer final : public IngestServer {
             free_send.pop_back();
           } else {
             ++m.send_failures;
+            ++m.send_wouldblock;
           }
         } else {
           // Every send slot is in flight: the kernel is behind. Dropping is the
           // right answer for a datagram service under overload.
           ++m.send_failures;
+          ++m.send_wouldblock;
         }
 
         m.service_ns.record(cycles_to_ns_i(rdcycles() - t0));

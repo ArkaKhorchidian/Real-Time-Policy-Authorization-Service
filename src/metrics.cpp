@@ -12,6 +12,9 @@ MetricsSnapshot MetricsRegistry::snapshot() const {
     s.bad_magic += w.bad_magic;
     s.unknown_subscriber += w.unknown_subscriber;
     s.send_failures += w.send_failures;
+    s.send_wouldblock += w.send_wouldblock;
+    s.send_nobufs += w.send_nobufs;
+    s.send_errors += w.send_errors;
     s.recv_errors += w.recv_errors;
     s.batches += w.batches;
     s.batch_datagrams += w.batch_datagrams;

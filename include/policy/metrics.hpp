@@ -28,6 +28,9 @@ struct alignas(kCacheLine) WorkerMetrics {
   std::uint64_t bad_magic = 0;        // right length, unknown magic/version
   std::uint64_t unknown_subscriber = 0;
   std::uint64_t send_failures = 0;    // staged but the kernel would not take it
+  std::uint64_t send_wouldblock = 0;  // ...because the socket send buffer was full
+  std::uint64_t send_nobufs = 0;      // ...because the interface queue was full
+  std::uint64_t send_errors = 0;      // ...because of a real error
   std::uint64_t recv_errors = 0;
 
   // --- loop shape ---
@@ -61,6 +64,9 @@ struct MetricsSnapshot {
   std::uint64_t bad_magic = 0;
   std::uint64_t unknown_subscriber = 0;
   std::uint64_t send_failures = 0;
+  std::uint64_t send_wouldblock = 0;
+  std::uint64_t send_nobufs = 0;
+  std::uint64_t send_errors = 0;
   std::uint64_t recv_errors = 0;
   std::uint64_t batches = 0;
   std::uint64_t batch_datagrams = 0;

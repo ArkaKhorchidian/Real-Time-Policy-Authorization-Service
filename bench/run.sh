@@ -40,6 +40,20 @@ else
   DURATION=15; WARMUP=3; SWEEP_QPS="10000 25000 50000 100000 150000 200000 300000 400000 500000"
 fi
 
+# The load every sweep other than the throughput curve runs at.
+#
+# It has to be a rate the baseline configuration sustains with no loss.
+# Comparing configurations while all of them are past the knee measures the
+# depth of a queue, not the thing being varied -- an early version of this
+# script swept batch sizes at 200k QPS on a host whose single worker saturates
+# near 150k, and every row came back at 45% loss and 100 ms of queueing.
+SUSTAINABLE_QPS="${SUSTAINABLE_QPS:-100000}"
+
+# Coordinated omission is invisible on a server with headroom: it only bites
+# when the server is sometimes slow, which is exactly when the measurement
+# matters. So that comparison deliberately runs just past the knee.
+OMISSION_QPS="${OMISSION_QPS:-150000}"
+
 # Core placement. Workers take the low cores, the generator takes the high ones,
 # so the two never share a core -- sharing one produces a latency figure that is
 # mostly scheduler.
@@ -47,6 +61,15 @@ NCORES="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)"
 SERVER_CORE0=0
 GEN_CORE0=$(( NCORES / 2 ))
 GEN_THREADS=$(( NCORES / 4 )); [[ $GEN_THREADS -lt 1 ]] && GEN_THREADS=1
+
+# Whether the kernel will load-balance across per-worker sockets. Without it,
+# workers share one socket, which is a throughput ceiling rather than a property
+# of the server -- so the sweep that varies worker count says so.
+if "$BUILD_DIR/bin/policyd" --version 2>/dev/null | grep -q "SO_REUSEPORT load balancing: *yes"; then
+  PER_WORKER_SOCKETS=1
+else
+  PER_WORKER_SOCKETS=0
+fi
 
 SERVER_PID=""
 cleanup() {
@@ -192,11 +215,16 @@ fi
 # 2. Worker scaling
 # ---------------------------------------------------------------------------
 if want scaling; then
-  section "Worker scaling at 200k QPS offered"
+  section "Worker scaling at ${SUSTAINABLE_QPS} QPS offered"
+  if [[ $PER_WORKER_SOCKETS -eq 0 ]]; then
+    note "NOTE: this platform has no SO_REUSEPORT load balancing, so every worker"
+    note "      shares one socket. The rows below measure that shared socket, not"
+    note "      how the server scales. Run this section on Linux for a real answer."
+  fi
   for workers in 1 2 4; do
     note "$workers worker(s)"
     start_server "$workers" 32 50 udp
-    run_load "scale-${workers}w" 200000 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
+    run_load "scale-${workers}w" "$SUSTAINABLE_QPS" 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
   done
 fi
 
@@ -204,11 +232,13 @@ fi
 # 3. Receive batch cap
 # ---------------------------------------------------------------------------
 if want batch; then
-  section "Receive batch cap sweep at 200k QPS offered"
+  section "Receive batch cap sweep at ${SUSTAINABLE_QPS} QPS offered"
+  # One worker, so the sweep isolates the batch cap rather than mixing it with
+  # whatever multiple workers do on this platform's socket.
   for batch in 1 8 32 128; do
     note "batch cap $batch"
-    start_server 2 "$batch" 50 udp
-    run_load "batch-${batch}" 200000 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
+    start_server 1 "$batch" 50 udp
+    run_load "batch-${batch}" "$SUSTAINABLE_QPS" 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
   done
 fi
 
@@ -230,14 +260,17 @@ fi
 # 5. Hot reload under load
 # ---------------------------------------------------------------------------
 if want reload; then
-  section "Hot reload under steady 100k QPS"
-  start_server 2 32 50 udp
+  section "Hot reload under steady ${SUSTAINABLE_QPS} QPS"
+  # One worker: the question is whether a reload perturbs the latency timeline,
+  # and a configuration that drops replies for unrelated reasons would bury the
+  # answer under its own noise.
+  start_server 1 32 50 udp
   ( for _ in $(seq 1 $(( (DURATION + WARMUP) / 5 + 1 )) ); do
       sleep 5
       curl -sf -X POST "http://127.0.0.1:$ADMIN_PORT/rules/reload" >/dev/null 2>&1 || true
     done ) &
   RELOAD_PID=$!
-  run_load "reload-100k" 100000 --timeline --out-prefix "$RESULTS/hot_reload" 2>&1 \
+  run_load "reload-steady" "$SUSTAINABLE_QPS" --timeline --out-prefix "$RESULTS/hot_reload" 2>&1 \
     | sed -n '/latency/,/mean/p' | sed 's/^/    /'
   wait $RELOAD_PID 2>/dev/null || true
   note "reload counters:"
@@ -249,13 +282,13 @@ fi
 # 6. Coordinated omission: open loop versus closed loop
 # ---------------------------------------------------------------------------
 if want omission; then
-  section "Coordinated omission demonstration at 150k QPS offered"
+  section "Coordinated omission demonstration at ${OMISSION_QPS} QPS offered"
   start_server 1 32 50 udp
   note "open loop (fixed schedule) -- the honest measurement"
-  run_load "omission-open" 150000 --out-prefix "$RESULTS/omission_open" 2>&1 \
+  run_load "omission-open" "$OMISSION_QPS" --out-prefix "$RESULTS/omission_open" 2>&1 \
     | sed -n '/latency/,/mean/p' | sed 's/^/    /'
   note "closed loop (send, wait, send) -- the same server, a client that hides the tail"
-  run_load "omission-closed" 150000 --closed-loop --out-prefix "$RESULTS/omission_closed" 2>&1 \
+  run_load "omission-closed" "$OMISSION_QPS" --closed-loop --out-prefix "$RESULTS/omission_closed" 2>&1 \
     | sed -n '/latency/,/mean/p' | sed 's/^/    /'
 fi
 
@@ -263,15 +296,15 @@ fi
 # 7. Ingest backends
 # ---------------------------------------------------------------------------
 if want backend; then
-  section "Ingest backend comparison at 200k QPS offered"
+  section "Ingest backend comparison at ${SUSTAINABLE_QPS} QPS offered"
   for backend in udp io_uring; do
     if [[ "$backend" == "io_uring" ]] && ! "$POLICYD" --version | grep -q "io_uring backend: *yes"; then
       note "io_uring backend not built into this binary; skipping"
       continue
     fi
     note "backend $backend"
-    start_server 2 32 50 "$backend"
-    run_load "backend-${backend}" 200000 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
+    start_server 1 32 50 "$backend"
+    run_load "backend-${backend}" "$SUSTAINABLE_QPS" 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
   done
 fi
 

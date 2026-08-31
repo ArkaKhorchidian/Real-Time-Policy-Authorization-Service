@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <cstring>
+#include <cstring>
 
 #include "policy/affinity.hpp"
 #include "policy/cycles.hpp"
@@ -49,9 +50,16 @@ bool UdpServer::start(std::string& error) {
   }
 
   if (!have_per_worker_sockets() && workers > 1) {
+    // Measured, not guessed: two threads sharing one UDP socket on macOS
+    // loopback start dropping replies with EAGAIN at around 100k QPS however
+    // large SO_SNDBUF is, and adding a third makes it worse. Anyone reading a
+    // multi-worker number from this build needs to know that before they read
+    // the number.
     LOG_WARN(
-        "%zu workers share one socket: this platform's SO_REUSEPORT does not distribute "
-        "datagrams. Scaling numbers from this build are not comparable to Linux.",
+        "%zu workers are sharing ONE socket: this platform's SO_REUSEPORT does not distribute "
+        "datagrams and there is no SO_REUSEPORT_LB. Expect reply drops under load "
+        "(policy_send_wouldblock_total) and treat any scaling figure from this build as a "
+        "property of the shared socket, not of the server. Use one worker here, or Linux.",
         workers);
   }
 
@@ -112,6 +120,7 @@ void UdpServer::worker_loop(std::size_t worker_index, int fd) {
       static_cast<std::uint64_t>(static_cast<double>(cfg_.busy_poll_us) * cps / 1e6);
 
   std::uint64_t idle_since = rdcycles();
+  std::uint64_t last_send_warn_ns = 0;
 
   while (!stop_.load(std::memory_order_relaxed)) {
     const int received = io.recv_batch();
@@ -193,13 +202,34 @@ void UdpServer::worker_loop(std::size_t worker_index, int fd) {
     }
 
     if (out == 0) continue;
-    const int sent = io.send_batch(out);
-    if (sent < 0) {
-      m.send_failures += out;
-      LOG_WARN("worker %zu send error: %s", worker_index, std::strerror(errno));
-    } else {
-      m.replies_sent += static_cast<std::uint64_t>(sent);
-      m.send_failures += out - static_cast<std::uint32_t>(sent);
+    int send_errno = 0;
+    const int sent = io.send_batch(out, &send_errno);
+    const std::uint32_t delivered = sent < 0 ? 0 : static_cast<std::uint32_t>(sent);
+    m.replies_sent += delivered;
+
+    if (delivered < out) {
+      const std::uint32_t dropped = out - delivered;
+      m.send_failures += dropped;
+      if (send_errno == ENOBUFS) {
+        m.send_nobufs += dropped;
+      } else if (send_errno == EAGAIN || send_errno == EWOULDBLOCK) {
+        m.send_wouldblock += dropped;
+      } else {
+        m.send_errors += dropped;
+      }
+      // Rate-limited, because at 100k QPS an unthrottled log here would be
+      // slower than the thing it is reporting on. Once a second is enough to
+      // notice, and the counters carry the real numbers.
+      const std::uint64_t now = cycles_now_ns();
+      if (now - last_send_warn_ns > 1'000'000'000ull) {
+        last_send_warn_ns = now;
+        LOG_WARN("worker %zu dropped %llu replies (%s); totals: buffer-full %llu, "
+                 "queue-full %llu, errors %llu",
+                 worker_index, static_cast<unsigned long long>(dropped),
+                 std::strerror(send_errno), static_cast<unsigned long long>(m.send_wouldblock),
+                 static_cast<unsigned long long>(m.send_nobufs),
+                 static_cast<unsigned long long>(m.send_errors));
+      }
     }
   }
 

@@ -109,13 +109,22 @@ ConfigParseResult parse_server_args(int argc, char** argv) {
       res.help_requested = true;
       return res;
     } else if (a == "--version") {
+      // Printed so a benchmark result can never be attributed to a fast path
+      // that was not actually compiled in.
       std::printf("policyd " POLICY_VERSION_STRING " (" POLICY_BUILD_TYPE ", " POLICY_COMPILER_ID
                   " " POLICY_COMPILER_VER ", " POLICY_SYSTEM_NAME "/" POLICY_SYSTEM_PROC ")\n"
                   "  batched syscalls (recvmmsg/sendmmsg): %s\n"
                   "  CPU affinity:                         %s\n"
-                  "  io_uring backend:                     %s\n",
+                  "  io_uring backend:                     %s\n"
+                  "  SO_REUSEPORT load balancing:          %s\n",
                   POLICY_HAVE_MMSG ? "yes" : "no", POLICY_HAVE_AFFINITY ? "yes" : "no",
-                  POLICY_HAVE_IO_URING ? "yes" : "no");
+                  POLICY_HAVE_IO_URING ? "yes" : "no",
+#if defined(__linux__)
+                  "yes"
+#else
+                  "no"
+#endif
+      );
       res.help_requested = true;
       return res;
     } else if (a == "--bind") {

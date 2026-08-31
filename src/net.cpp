@@ -212,19 +212,34 @@ void BatchIo::stage_reply(std::uint32_t out, std::uint32_t src, const void* repl
   send_addr_[out] = recv_addr_[src];
 }
 
-int BatchIo::send_batch(std::uint32_t count) {
+int BatchIo::send_batch(std::uint32_t count, int* out_errno) {
+  if (out_errno != nullptr) *out_errno = 0;
   if (count == 0) return 0;
+
+  // Three transient conditions stop a send early and all three mean "drop the
+  // rest of this batch", which is the correct response for a datagram service
+  // under overload: blocking here would back-pressure into receive and turn a
+  // send-side problem into a latency spike for every request in the batch.
+  //
+  //   EAGAIN/EWOULDBLOCK — the socket send buffer is full.
+  //   ENOBUFS            — the interface queue is full. On loopback this is the
+  //                        usual one, and it is what limits multiple threads
+  //                        sharing a socket on macOS.
+  //
+  // They are reported separately rather than lumped together, because a drop
+  // rate is only diagnosable if you know which one it was.
+  auto transient = [](int e) {
+    return e == EAGAIN || e == EWOULDBLOCK || e == ENOBUFS;
+  };
+
 #if POLICY_HAVE_MMSG
   std::uint32_t sent = 0;
   while (sent < count) {
     const int n = ::sendmmsg(fd_, send_msgs_.data() + sent, count - sent, MSG_DONTWAIT);
     if (n < 0) {
       if (errno == EINTR) continue;
-      // EAGAIN means the send buffer is full. Dropping the rest is the correct
-      // response for a datagram service under overload — blocking here would
-      // back-pressure into receive and turn a send-side problem into a latency
-      // spike for every request in the batch.
-      if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+      if (out_errno != nullptr) *out_errno = errno;
+      if (transient(errno)) break;
       return sent > 0 ? static_cast<int>(sent) : -1;
     }
     sent += static_cast<std::uint32_t>(n);
@@ -232,14 +247,16 @@ int BatchIo::send_batch(std::uint32_t count) {
   return static_cast<int>(sent);
 #else
   std::uint32_t sent = 0;
-  for (; sent < count; ++sent) {
+  while (sent < count) {
     const ssize_t r = ::sendto(fd_, send_buf_.data() + sent * kSlotSize, kWireMsgSize, MSG_DONTWAIT,
                                reinterpret_cast<sockaddr*>(&send_addr_[sent]), sizeof(sockaddr_in));
     if (r < 0) {
-      if (errno == EINTR) { --sent; continue; }
-      if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+      if (errno == EINTR) continue;
+      if (out_errno != nullptr) *out_errno = errno;
+      if (transient(errno)) break;
       return sent > 0 ? static_cast<int>(sent) : -1;
     }
+    ++sent;
   }
   return static_cast<int>(sent);
 #endif

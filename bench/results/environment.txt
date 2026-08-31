@@ -1,4 +1,4 @@
-Captured: 2026-08-31T01:05:41Z
+Captured: 2026-08-31T01:18:37Z
 Host OS:  Darwin 25.5.0 arm64
 
 --- CPU ---
@@ -16,6 +16,7 @@ policyd 1.0.0 (Release, AppleClang 21.0.0.21000101, Darwin/arm64)
   batched syscalls (recvmmsg/sendmmsg): no
   CPU affinity:                         no
   io_uring backend:                     no
+  SO_REUSEPORT load balancing:          no
 
 --- Placement ---
 server workers start at core 0

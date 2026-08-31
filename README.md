@@ -46,6 +46,7 @@ network stack.** That is the finding this project exists to produce, and
   - [Hot reload under load](#hot-reload-under-load)
   - [Receive batch cap](#receive-batch-cap)
   - [Busy-poll budget](#busy-poll-budget)
+  - [Protocol overhead](#protocol-overhead)
   - [Repeatability](#repeatability)
   - [Worker scaling](#worker-scaling)
 - [Environment](#environment)
@@ -224,6 +225,29 @@ Run deliberately at a low rate, because the wake-up cost only appears when the
 inter-arrival gap is longer than the poll budget. When it is, every request pays
 the scheduler and IPI cost of waking a parked thread. Spinning removes that, at
 the price of a core burning at 100%.
+
+### Protocol overhead
+
+<!-- BENCH:protocol -->
+<!-- /BENCH:protocol -->
+
+The service also exposes the same decision over HTTP, at
+`GET /v1/decide?imsi=…&dnn=…&rat=…`, on its own port and its own thread-per-core
+listener but through the identical rule table, subscriber store and RCU
+snapshot. A test asserts the two paths return the same decision field for field,
+because a protocol comparison between fronts that answer slightly different
+questions is worthless.
+
+```
+$ curl -s 'localhost:9502/v1/decide?imsi=310260100003990&dnn=internet&rat=NR'
+{"verdict":"ALLOW","reason":"QUOTA_EXHAUSTED_THROTTLED","rule_id":61,
+ "policy_version":1,"qos_5qi":9,"arp":8,"ambr_ul_kbps":1000,"ambr_dl_kbps":1000,
+ "rating_group":100,"quota_bytes":1000000000,"quota_validity_s":86400,
+ "flags":1,"redirect_id":0}
+```
+
+This is also the "policy as a developer-facing API" surface: it is the same
+compiled rule table, reachable with curl.
 
 ### Repeatability
 
@@ -456,6 +480,7 @@ include/policy/
 src/
   server_udp.cpp        thread-per-core, recvmmsg/sendmmsg or a portable loop
   server_iouring.cpp    io_uring ingest backend (Linux + liburing)
+  http_front.cpp        HTTP/1.1 front over the same decision path
   control_plane.cpp     loader, reload watcher, admin endpoints
   rules.cpp             the rule compiler, including shadow detection
 bench/
@@ -513,9 +538,11 @@ publish is a choice, and most published numbers are the flattering one.
   machines and a real NIC would raise the floor and make the tail more honest.
 - **No AF_XDP or DPDK rung.** The ladder is socket → io_uring → AF_XDP → DPDK,
   and this covers the first two.
-- **No gRPC front to compare against.** The point of the fixed binary format is
-  that protocol overhead becomes a number rather than an excuse, and that number
-  is currently missing.
+- **The protocol comparison is against HTTP/1.1, not gRPC.** It is a lower
+  bound: a GET with query parameters on a kept-alive connection is the cheapest
+  HTTP can be, and protobuf framing over HTTP/2 with TLS would cost more. A
+  real gRPC front would make the number more directly comparable to what a 5G
+  Npcf interface actually does.
 - **The subscriber store is read-mostly by design.** Usage counters are updated
   with relaxed atomics and tolerate bounded staleness, which is right for a
   policy decision but is not a general-purpose concurrent map. Real charging

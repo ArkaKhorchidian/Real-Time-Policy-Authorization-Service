@@ -134,6 +134,28 @@ are comparable to a production deployment.** The binary reports which path is
 live in its startup banner, on `/stats`, and in `--version`, so a benchmark
 result cannot accidentally be attributed to the wrong one.
 
+## The HTTP front
+
+A second listener, on its own port and its own thread-per-core loop, serving
+`GET /v1/decide?imsi=…&dnn=…&rat=…` over keep-alive HTTP/1.1 and returning the
+decision as JSON. It reads the same `RuleSet` through the same RCU domain and
+the same `SubscriberStore` — there is no second copy of anything.
+
+It exists for two reasons. First, it turns protocol overhead into a number:
+running both fronts against one engine on one host, at the same offered load,
+says what an ergonomic API costs on top of the same decision. A test asserts the
+two paths return identical decisions field for field, because a comparison
+between fronts that answer slightly different questions measures nothing.
+
+Second, it is the developer-facing surface. "A policy API could sit directly on
+top of this" is a claim that is much easier to believe when it is a curl away.
+
+The comparison is deliberately generous to HTTP — a GET with query parameters,
+no request body to parse, connections kept alive, no TLS — so the overhead it
+shows is a lower bound. It also includes the client's cost of formatting a
+request, which is part of what a protocol costs and is reported separately as
+the generator's send lateness.
+
 ## Control plane
 
 Runs on its own thread and never touches worker state except through the same

@@ -13,7 +13,8 @@ add_executable(policy-tests
   test_rcu.cpp
   test_golden.cpp
   test_reload_concurrency.cpp
-  test_admin_http.cpp)
+  test_admin_http.cpp
+  test_http_front.cpp)
 
 target_include_directories(policy-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(policy-tests PRIVATE policy_net)
@@ -26,7 +27,7 @@ add_test(NAME policy-tests COMMAND policy-tests
 
 # Named subsets, so a failure in CI points at an area rather than at "tests".
 foreach(suite Wire Imsi Yaml Rules Store Engine EngineProperty Hdr Rcu Golden
-              ReloadConcurrency AdminHttp)
+              ReloadConcurrency AdminHttp HttpFront)
   add_test(NAME suite.${suite}
            COMMAND policy-tests --filter ${suite}.
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

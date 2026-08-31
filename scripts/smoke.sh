@@ -16,6 +16,7 @@ BACKEND="${1:-udp}"
 BUILD_DIR="${BUILD_DIR:-build}"
 PORT="${PORT:-19600}"
 ADMIN_PORT="${ADMIN_PORT:-19601}"
+HTTP_PORT="${HTTP_PORT:-19602}"
 LOG="$(mktemp -t policyd-smoke.XXXXXX)"
 
 POLICYD="$BUILD_DIR/bin/policyd"
@@ -37,7 +38,7 @@ ok()   { echo "  ok  $*"; }
 echo "smoke test: backend=$BACKEND"
 
 "$POLICYD" --workers 2 --backend "$BACKEND" --port "$PORT" --admin-port "$ADMIN_PORT" \
-           --no-pin --no-watch --log-level info > "$LOG" 2>&1 &
+           --http-port "$HTTP_PORT" --no-pin --no-watch --log-level info > "$LOG" 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 60); do
@@ -70,7 +71,17 @@ def check(cond, msg):
 
 check(d["requests"] > 25000, f"server handled {d['requests']} requests")
 check(d["replies_sent"] > 25000, f"server sent {d['replies_sent']} replies")
-check(d["send_failures"] == 0, "no send failures")
+
+# A real send error is always a bug. Transient back-pressure is not: on a
+# platform without SO_REUSEPORT load balancing, workers share one socket and it
+# occasionally refuses a send with EAGAIN. So those are held to a rate rather
+# than to zero, and the two are distinguished so a genuine failure cannot hide
+# behind the allowance.
+check(d["send_errors"] == 0, "no hard send errors")
+transient = d["send_wouldblock"] + d["send_nobufs"]
+rate = transient / max(d["requests"], 1)
+check(rate < 0.001,
+      f"transient send drops {transient} ({rate*100:.4f}%) are within tolerance")
 check(d["bad_magic"] == 0, "no protocol version mismatches")
 v = d["verdicts"]
 # A run where everything is allowed, or everything denied, means the policy or
@@ -98,6 +109,25 @@ ok "/subscriber/{imsi} works"
 curl -sf "http://127.0.0.1:$ADMIN_PORT/explain?imsi=$IMSI&dnn=internet" | grep -q "features_decoded" \
   || fail "/explain did not return a decoded feature word"
 ok "/explain works"
+
+# --- HTTP front: same decision, different wire ------------------------------
+HTTP_BODY="$(curl -sf "http://127.0.0.1:$HTTP_PORT/v1/decide?imsi=$IMSI&dnn=internet&rat=NR")" \
+  || fail "the HTTP front did not answer"
+echo "$HTTP_BODY" | grep -q '"verdict"' || fail "HTTP front returned no verdict: $HTTP_BODY"
+echo "$HTTP_BODY" | grep -q '"policy_version"' || fail "HTTP front omitted the policy version"
+ok "HTTP front answers GET /v1/decide"
+
+# No -f here: --fail makes curl suppress its output for a 4xx, which is exactly
+# the response this check is trying to read.
+curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$HTTP_PORT/v1/decide" 2>/dev/null \
+  | grep -q '^400$' || fail "a request with no IMSI should be a 400"
+ok "HTTP front rejects a malformed request with 400"
+
+"$LOADGEN" --server "127.0.0.1:$HTTP_PORT" --protocol http --connections 16 \
+           --qps 5000 --duration 3 --warmup 1 --threads 1 --no-pin --timeout-ms 500 \
+           > /tmp/smoke-http.txt 2>&1 \
+  || fail "the HTTP front lost requests under load: $(tail -5 /tmp/smoke-http.txt)"
+ok "5k QPS over HTTP for 3 s with no loss"
 
 # --- hot reload while traffic is flowing -----------------------------------
 "$LOADGEN" --server "127.0.0.1:$PORT" --qps 10000 --duration 4 --warmup 0 \

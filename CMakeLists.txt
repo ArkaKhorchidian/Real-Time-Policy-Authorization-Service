@@ -151,6 +151,7 @@ add_library(policy_net STATIC
   src/server_udp.cpp
   src/server_iouring.cpp
   src/admin_http.cpp
+  src/http_front.cpp
   src/control_plane.cpp)
 target_link_libraries(policy_net PUBLIC policy_core)
 if(POLICY_HAVE_IO_URING)

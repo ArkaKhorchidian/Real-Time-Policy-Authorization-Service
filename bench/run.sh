@@ -20,6 +20,7 @@ BUILD_DIR="${BUILD_DIR:-build}"
 RESULTS="${RESULTS:-bench/results}"
 PORT="${PORT:-19500}"
 ADMIN_PORT="${ADMIN_PORT:-19501}"
+HTTP_PORT="${HTTP_PORT:-19502}"
 SUBSCRIBERS="${SUBSCRIBERS:-config/subscribers.csv}"
 RULES="${RULES:-config/rules.yaml}"
 
@@ -168,6 +169,7 @@ start_server() { # workers batch busy_poll backend
   cleanup
   "$POLICYD" --workers "$workers" --batch "$batch" --busy-poll-us "$poll" \
              --backend "$backend" --port "$PORT" --admin-port "$ADMIN_PORT" \
+             --http-port "$HTTP_PORT" \
              --first-core "$SERVER_CORE0" --rules "$RULES" --subscribers "$SUBSCRIBERS" \
              --no-watch --log-level warn > "$RESULTS/server.log" 2>&1 &
   SERVER_PID=$!
@@ -322,7 +324,28 @@ if want backend; then
 fi
 
 # ---------------------------------------------------------------------------
-# 8. Repeatability
+# 8. Protocol overhead
+# ---------------------------------------------------------------------------
+if want protocol; then
+  section "Protocol overhead at ${SUSTAINABLE_QPS} QPS offered"
+  note "Same server, same decision path, same rule table, same subscriber store."
+  note "The only difference is what goes over the wire, so the gap between these"
+  note "two rows is the cost of the protocol and nothing else."
+  start_server 1 32 50 udp
+  note "binary over UDP, 64 B each way"
+  run_load "protocol-udp" "$SUSTAINABLE_QPS" --out-prefix "$RESULTS/protocol_udp" 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
+  note "HTTP/1.1 GET + JSON, keep-alive"
+  "$LOADGEN" --server "127.0.0.1:$HTTP_PORT" --protocol http --connections 64 \
+             --qps "$SUSTAINABLE_QPS" --duration "$DURATION" --warmup "$WARMUP" \
+             --threads "$GEN_THREADS" --first-core "$GEN_CORE0" \
+             --rules "$RULES" --subscribers "$SUBSCRIBERS" \
+             --summary-csv "$RESULTS/summary.csv" --tag "protocol-http" \
+             --out-prefix "$RESULTS/protocol_http" 2>&1 | sed -n '/latency/,/mean/p' | sed 's/^/    /'
+  capture_server_stats "protocol-http"
+fi
+
+# ---------------------------------------------------------------------------
+# 9. Repeatability
 # ---------------------------------------------------------------------------
 if want repeat; then
   section "Repeatability: ${REPEATS} runs of the headline configuration"

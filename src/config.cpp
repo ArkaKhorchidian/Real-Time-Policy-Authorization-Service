@@ -52,6 +52,10 @@ void print_server_usage(const char* argv0) {
       "  --batch N                recvmmsg/sendmmsg batch cap (default 32)\n"
       "  --backend udp|io_uring   Ingest backend (default udp)\n"
       "  --busy-poll-us N         Spin this long before blocking; 0 disables (default 50)\n"
+      "  --http-port N            Also serve GET /v1/decide over HTTP on this port;\n"
+      "                           0 disables (default 0). Same decision path, so the\n"
+      "                           difference from the binary path is protocol overhead.\n"
+      "  --http-bind ADDR         HTTP front bind address (default 0.0.0.0)\n"
       "  --rcvbuf BYTES           SO_RCVBUF per worker socket (default 4 MiB)\n"
       "  --sndbuf BYTES           SO_SNDBUF per worker socket (default 4 MiB)\n"
       "\n"
@@ -143,6 +147,10 @@ ConfigParseResult parse_server_args(int argc, char** argv) {
       }
     } else if (a == "--busy-poll-us") {
       u64_opt(i, n); c.busy_poll_us = static_cast<std::uint32_t>(n);
+    } else if (a == "--http-port") {
+      u64_opt(i, n); c.http_port = static_cast<std::uint16_t>(n);
+    } else if (a == "--http-bind") {
+      if (const char* v = need_value(i)) c.http_bind_address = v;
     } else if (a == "--rcvbuf") {
       u64_opt(i, n); c.so_rcvbuf = static_cast<std::uint32_t>(n);
     } else if (a == "--sndbuf") {

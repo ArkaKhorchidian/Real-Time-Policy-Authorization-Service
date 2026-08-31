@@ -232,6 +232,38 @@ def section_scaling(rows, server):
     return "\n".join(out)
 
 
+def section_protocol(rows):
+    """Binary/UDP versus HTTP+JSON over the same decision path."""
+    tags = by_tag(rows)
+    u, h = tags.get("protocol-udp"), tags.get("protocol-http")
+    if not u or not h:
+        return "_Not recorded._"
+    out = [
+        "Same server, same rule table, same subscriber store, same offered load. "
+        "The only difference is what goes over the wire.",
+        "",
+        "| Protocol | Achieved | p50 | p99 | p99.9 | Bytes per exchange |",
+        "|---|---:|---:|---:|---:|---:|",
+        f"| binary over UDP | {fnum(u,'achieved_qps'):,.0f} QPS | {fmt(fnum(u,'p50_us'))} µs | "
+        f"{fmt(fnum(u,'p99_us'))} µs | {fmt(fnum(u,'p999_us'))} µs | 64 + 64 |",
+        f"| HTTP/1.1 GET + JSON | {fnum(h,'achieved_qps'):,.0f} QPS | {fmt(fnum(h,'p50_us'))} µs | "
+        f"{fmt(fnum(h,'p99_us'))} µs | {fmt(fnum(h,'p999_us'))} µs | ~190 + ~300 |",
+    ]
+    d50 = fnum(h, "p50_us") - fnum(u, "p50_us")
+    d99 = fnum(h, "p99_us") - fnum(u, "p99_us")
+    ratio = fnum(h, "p50_us") / max(fnum(u, "p50_us"), 1e-9)
+    out += ["", f"**The protocol costs {d50:+.1f} µs at p50 and {d99:+.1f} µs at p99** "
+                f"({ratio:.2f}× the median), for the same decision.",
+            "",
+            "That is a lower bound. The HTTP request here is a GET with query parameters "
+            "and no body, on a kept-alive connection: there is no JSON to decode on the "
+            "way in and no TLS. A gRPC or Npcf front with protobuf framing, HTTP/2 flow "
+            "control and TLS costs more, not less. The point of the fixed binary format "
+            "is that this number exists at all — protocol overhead is a measurement, not "
+            "an excuse."]
+    return "\n".join(out)
+
+
 def section_repeat(rows):
     """Run-to-run spread of the headline configuration."""
     reps = sorted((r for r in rows if r["tag"].startswith("repeat-")),
@@ -299,6 +331,7 @@ def main():
         "poll": section_poll(rows),
         "scaling": section_scaling(rows, server),
         "repeat": section_repeat(rows),
+        "protocol": section_protocol(rows),
         "environment": section_environment(results),
     }
 

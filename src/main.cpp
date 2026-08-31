@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "policy/control_plane.hpp"
+#include "policy/http_front.hpp"
 #include "policy/logging.hpp"
 #include "policy/server.hpp"
 
@@ -67,6 +68,21 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "policyd: %s\n", error.c_str());
     return 1;
   }
+
+  // Optional HTTP front, over the same decision path and the same RCU snapshot.
+  std::unique_ptr<policy::HttpFrontServer> http_front;
+  if (cfg.http_port != 0) {
+    http_front = std::make_unique<policy::HttpFrontServer>(cfg, deps, cfg.http_bind_address,
+                                                           cfg.http_port);
+    if (!http_front->start(error)) {
+      std::fprintf(stderr, "policyd: %s\n", error.c_str());
+      server->request_stop();
+      server->join();
+      return 1;
+    }
+    LOG_INFO("HTTP front on http://%s:%u/v1/decide — %s", cfg.http_bind_address.c_str(),
+             http_front->bound_port(), http_front->description().c_str());
+  }
   if (!control.start(error)) {
     std::fprintf(stderr, "policyd: %s\n", error.c_str());
     server->request_stop();
@@ -92,7 +108,19 @@ int main(int argc, char** argv) {
   if (g_signal != 0) LOG_INFO("signal %d received, shutting down", static_cast<int>(g_signal));
   server->request_stop();
   server->join();
+  if (http_front) {
+    http_front->request_stop();
+    http_front->join();
+  }
   control.stop();
+
+  if (http_front) {
+    const auto hs = http_front->snapshot();
+    LOG_INFO("HTTP front served %llu requests over %llu connection(s); service time %s",
+             static_cast<unsigned long long>(hs.requests),
+             static_cast<unsigned long long>(hs.connections_accepted),
+             hs.service_ns.summary_line("ns").c_str());
+  }
 
   const auto snap = control.metrics().snapshot();
   LOG_INFO("served %llu requests, %llu replies, %llu unknown subscribers; service time %s",

@@ -33,6 +33,12 @@ struct ServerConfig {
 
   IngestBackend backend = IngestBackend::kUdp;
 
+  // Optional HTTP/1.1 front on its own port, over the same decision path.
+  // 0 disables it. Its purpose is to put a number on protocol overhead; see
+  // include/policy/http_front.hpp.
+  std::uint16_t http_port = 0;
+  std::string http_bind_address = "0.0.0.0";
+
   // Spin before falling back to a blocking wait. Busy-polling removes the
   // wake-up latency (a few microseconds of scheduler and IPI cost) at the price
   // of a core burning at 100%. Zero disables it.

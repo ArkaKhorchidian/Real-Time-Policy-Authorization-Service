@@ -1,15 +1,28 @@
 // Subscriber store: flat open-addressing hash on the packed IMSI.
 //
-// Memory math, stated up front because sizing for a real carrier is the point:
+// Memory math, worked out rather than asserted, because sizing for a real
+// carrier is the point and the round number people quote is wrong:
 //
 //   SubscriberRecord            = 64 B (one cache line, alignas(64))
-//   load factor                 = 0.5  -> 2 slots per subscriber
-//   10,000,000 subscribers      -> 16,777,216 slots (next power of two)
-//                                -> 16,777,216 * 64 B = 1.07 GB
+//   target load factor          <= 0.5 -> at least 2 slots per subscriber
+//   10,000,000 subscribers      -> needs >= 20,000,000 slots
+//                               -> next power of two is 33,554,432
+//                               -> 33,554,432 * 64 B = 2.15 GB, load factor 0.30
 //
-// So a 10M-subscriber HSS image is ~1 GB resident. That fits in a single
-// machine's RAM with room to spare, which is why the whole store is a flat
-// array rather than a sharded cache in front of a database.
+// It is 2.15 GB, not the 1 GB that "10M x 64 B x 2" suggests, because the table
+// size is a power of two and 20M lands just past the 16.8M boundary. That
+// granularity is not wasted, though: the same 2.15 GB holds 16.7M subscribers
+// at load factor 0.5, so a deployment sized for 10M gets 67% headroom for free
+// and will not rehash until it is genuinely outgrown.
+//
+// If 2.15 GB is the wrong trade, `max_load_factor` moves it: at 0.6 the same
+// 10M subscribers fit in 16,777,216 slots and 1.07 GB. Linear probing costs
+// ~1.5 probes per hit at load factor 0.5 and ~1.8 at 0.6 — a real but modest
+// tail cost for halving the resident set. The default is 0.5 because this
+// service is judged on its p99.9.
+//
+// Either way a 10M-subscriber image fits in one machine's RAM, which is why the
+// store is a flat array rather than a sharded cache in front of a database.
 //
 // Layout choice: records live inline in the slot array rather than as indices
 // into a separate value array. A lookup is then exactly one cache miss on a
@@ -85,9 +98,21 @@ struct StoreStats {
 
 class SubscriberStore {
  public:
-  // `expected_subscribers` sizes the table; capacity is the next power of two
-  // at or above 2x that, so the load factor stays <= 0.5.
-  explicit SubscriberStore(std::size_t expected_subscribers = 1024);
+  // `expected_subscribers` sizes the table: capacity is the next power of two
+  // at or above `expected / max_load_factor`, so the table never rehashes at
+  // the expected size. `max_load_factor` is clamped to [0.25, 0.9].
+  explicit SubscriberStore(std::size_t expected_subscribers = 1024,
+                           double max_load_factor = 0.5);
+
+  // The load factor at which the table doubles.
+  [[nodiscard]] double max_load_factor() const noexcept { return max_load_factor_; }
+
+  // Slots needed for `n` subscribers at `load_factor`, and the bytes they cost.
+  // Exposed so the sizing arithmetic above is executable rather than a comment.
+  [[nodiscard]] static std::size_t slots_for(std::size_t n, double load_factor = 0.5);
+  [[nodiscard]] static std::size_t bytes_for(std::size_t n, double load_factor = 0.5) {
+    return slots_for(n, load_factor) * sizeof(SubscriberRecord);
+  }
 
   SubscriberStore(const SubscriberStore&) = delete;
   SubscriberStore& operator=(const SubscriberStore&) = delete;
@@ -160,6 +185,7 @@ class SubscriberStore {
   std::vector<SubscriberRecord> slots_;
   std::size_t mask_ = 0;
   std::size_t size_ = 0;
+  double max_load_factor_ = 0.5;
 };
 
 // Round `n` up to a power of two, minimum 8.

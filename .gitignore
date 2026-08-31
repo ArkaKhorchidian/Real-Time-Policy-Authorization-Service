@@ -23,3 +23,7 @@ bench/results/*.log
 compile_commands.json
 .cache/
 perf.data*
+
+# Sanitizer build trees
+build-asan/
+build-tsan/

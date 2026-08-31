@@ -141,6 +141,12 @@ class HdrHistogram {
   [[nodiscard]] std::int64_t total_count() const noexcept { return total_count_; }
   [[nodiscard]] std::int64_t overflow_count() const noexcept { return overflow_count_; }
   [[nodiscard]] std::int64_t negative_count() const noexcept { return negative_count_; }
+  // The exact smallest and largest values recorded. Note that these are NOT
+  // the same as value_at_percentile(0) and value_at_percentile(100): every
+  // percentile is reported as the top of the bucket the value fell in, so
+  // p100 lies in [max(), highest_equivalent_value(max())]. Reporting the raw
+  // extremes here is deliberate — when someone asks what the worst request
+  // took, the bucket boundary is not the answer.
   [[nodiscard]] std::int64_t min() const noexcept { return total_count_ ? min_ : 0; }
   [[nodiscard]] std::int64_t max() const noexcept { return total_count_ ? max_ : 0; }
   [[nodiscard]] bool empty() const noexcept { return total_count_ == 0; }

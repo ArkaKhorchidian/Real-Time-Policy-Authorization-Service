@@ -77,8 +77,14 @@ inline constexpr std::uint64_t kInvalidImsi = 0;
     if (!mcc || !mnc) return std::nullopt;
     return make_plmn(static_cast<std::uint32_t>(*mcc), static_cast<std::uint32_t>(*mnc));
   }
-  const auto mcc = parse_digits(s.substr(0, sep), 3);
-  const auto mnc = parse_digits(s.substr(sep + 1), 3);
+  // The MCC is always exactly three digits and the MNC is two or three.
+  // Accepting a short MCC would let "31-260" parse as a valid network, which is
+  // a different operator on a different continent from "310-260".
+  const std::string_view mcc_text = s.substr(0, sep);
+  const std::string_view mnc_text = s.substr(sep + 1);
+  if (mcc_text.size() != 3 || mnc_text.size() < 2 || mnc_text.size() > 3) return std::nullopt;
+  const auto mcc = parse_digits(mcc_text, 3);
+  const auto mnc = parse_digits(mnc_text, 3);
   if (!mcc || !mnc) return std::nullopt;
   return make_plmn(static_cast<std::uint32_t>(*mcc), static_cast<std::uint32_t>(*mnc));
 }

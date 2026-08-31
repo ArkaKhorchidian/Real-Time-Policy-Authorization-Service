@@ -1,6 +1,7 @@
 #include "policy/subscriber_store.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <optional>
@@ -16,8 +17,16 @@ std::size_t next_pow2(std::size_t n) {
   return p;
 }
 
-SubscriberStore::SubscriberStore(std::size_t expected_subscribers) {
-  const std::size_t cap = next_pow2(std::max<std::size_t>(expected_subscribers, 4) * 2);
+std::size_t SubscriberStore::slots_for(std::size_t n, double load_factor) {
+  load_factor = std::clamp(load_factor, 0.25, 0.9);
+  const auto needed = static_cast<std::size_t>(
+      std::ceil(static_cast<double>(std::max<std::size_t>(n, 4)) / load_factor));
+  return next_pow2(needed);
+}
+
+SubscriberStore::SubscriberStore(std::size_t expected_subscribers, double max_load_factor)
+    : max_load_factor_(std::clamp(max_load_factor, 0.25, 0.9)) {
+  const std::size_t cap = slots_for(expected_subscribers, max_load_factor_);
   slots_.assign(cap, SubscriberRecord{});
   mask_ = cap - 1;
 }
@@ -47,10 +56,13 @@ void SubscriberStore::grow(std::size_t new_capacity) {
 bool SubscriberStore::upsert(const SubscriberRecord& rec) {
   if (rec.imsi == 0) return false;
 
-  // Keep the load factor at or below 0.5. Probe length grows as
-  // 1/(1-alpha) for linear probing, so 0.5 buys ~1.5 average probes; at 0.8 it
-  // is 3, at 0.9 it is 5.5. Memory is cheaper than the tail latency.
-  if ((size_ + 1) * 2 > slots_.size()) grow(slots_.size() * 2);
+  // Keep the load factor at or below the configured ceiling. Average probe
+  // length for linear probing grows as (1 + 1/(1-alpha))/2: 1.5 at alpha 0.5,
+  // 1.8 at 0.6, 3.0 at 0.8, 5.5 at 0.9. Memory is usually cheaper than tail
+  // latency, which is why the default ceiling is 0.5.
+  if (static_cast<double>(size_ + 1) > static_cast<double>(slots_.size()) * max_load_factor_) {
+    grow(slots_.size() * 2);
+  }
 
   std::size_t i = hash(rec.imsi) & mask_;
   for (;;) {

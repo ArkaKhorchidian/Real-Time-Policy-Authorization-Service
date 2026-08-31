@@ -1,0 +1,162 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The full suite on Linux, where the fast paths this project is actually about
+  # -- SO_REUSEPORT load balancing, recvmmsg/sendmmsg, CPU pinning, io_uring --
+  # are the ones that get compiled and run.
+  # ---------------------------------------------------------------------------
+  linux:
+    name: linux / ${{ matrix.compiler }} / ${{ matrix.build_type }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            build_type: Release
+          - compiler: clang
+            cc: clang
+            cxx: clang++
+            build_type: Release
+          - compiler: gcc
+            cc: gcc
+            cxx: g++
+            build_type: RelWithDebInfo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install liburing
+        run: sudo apt-get update -qq && sudo apt-get install -y liburing-dev
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        # -march=native is off in CI: the runner's CPU is not the machine anyone
+        # will run this on, and building for it makes the artifacts unusable
+        # elsewhere for no benefit to a correctness run.
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DPOLICY_NATIVE_ARCH=OFF \
+            -DPOLICY_WERROR=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Confirm the Linux fast paths were actually compiled in
+        run: |
+          ./build/bin/policyd --version
+          ./build/bin/policyd --version | grep -q "batched syscalls (recvmmsg/sendmmsg): yes"
+          ./build/bin/policyd --version | grep -q "CPU affinity: *yes"
+          ./build/bin/policyd --version | grep -q "io_uring backend: *yes"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j2
+
+      - name: Golden corpus reproduces byte for byte
+        # Regenerating must be a no-op. If it is not, either the policy changed
+        # without the corpus being updated, or the generator is not
+        # deterministic across machines -- both are worth failing for.
+        run: |
+          cp tests/golden/decisions.csv /tmp/golden.committed
+          ./build/bin/policy-gen-golden --count 10000
+          diff -u /tmp/golden.committed tests/golden/decisions.csv
+
+      - name: Synthetic roster reproduces byte for byte
+        run: |
+          cp config/subscribers.csv /tmp/subs.committed
+          ./build/bin/policy-gen-subscribers --count 20000 --out config/subscribers.csv
+          diff -u /tmp/subs.committed config/subscribers.csv
+
+      - name: End-to-end smoke test, socket backend
+        run: ./scripts/smoke.sh udp
+
+      - name: End-to-end smoke test, io_uring backend
+        # io_uring can be unavailable at runtime even where it compiles (older
+        # kernel, seccomp, kernel.io_uring_disabled). The server falls back with
+        # a warning rather than refusing to start, so the smoke test still has
+        # to pass -- it just may not have exercised io_uring.
+        run: ./scripts/smoke.sh io_uring
+
+  # ---------------------------------------------------------------------------
+  # macOS: the portable fallback paths. Nothing here produces a comparable
+  # latency number, but it does keep the non-Linux build honest.
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macos / clang / Release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPOLICY_NATIVE_ARCH=OFF -DPOLICY_WERROR=ON
+      - name: Build
+        run: cmake --build build -j"$(sysctl -n hw.ncpu)"
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j2
+      - name: End-to-end smoke test
+        run: ./scripts/smoke.sh udp
+
+  # ---------------------------------------------------------------------------
+  # Sanitizers. The RCU swap path and the worker loop are where a race or a
+  # use-after-free would live, and both are exercised hard by the concurrency
+  # tests, so these jobs are the ones that make the hot-reload claim credible.
+  # ---------------------------------------------------------------------------
+  sanitizers:
+    name: sanitizers / ${{ matrix.san }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        san: [asan, tsan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: |
+          FLAG=$([ "${{ matrix.san }}" = "asan" ] && echo -DPOLICY_ASAN=ON || echo -DPOLICY_TSAN=ON)
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPOLICY_NATIVE_ARCH=OFF $FLAG
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest --test-dir build --output-on-failure --timeout 900
+      - name: End-to-end smoke test under ${{ matrix.san }}
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          TSAN_OPTIONS: halt_on_error=1
+        run: ./scripts/smoke.sh udp
+
+  # ---------------------------------------------------------------------------
+  # A short benchmark run, to prove the harness itself still works. The numbers
+  # from a shared CI runner are not results and are not published as such.
+  # ---------------------------------------------------------------------------
+  bench-smoke:
+    name: benchmark harness (not a measurement)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the quick sweep
+        run: ./bench/run.sh --quick --only latency
+      - name: Check the harness produced usable output
+        run: python3 scripts/check_bench_output.py bench/results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-bench-output
+          path: bench/results/
+          retention-days: 7
